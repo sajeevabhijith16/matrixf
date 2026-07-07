@@ -58,69 +58,61 @@ class MatrixApi {
   }
 
   Future<List<Course>> listCourses() async {
-    final rows = await _restGet(
-      'courses',
-      {
-        'select':
-            'id,slug,title,subtitle,description,cover_image_url,category,price_inr,is_published,created_at',
-        'is_published': 'eq.true',
-        'order': 'created_at.desc',
-      },
-    );
+    final rows = await _restGet('courses', {
+      'select':
+          'id,slug,title,subtitle,description,cover_image_url,category,price_inr,is_published,program,branch,semester,created_at',
+      'is_published': 'eq.true',
+      'order': 'created_at.desc',
+    });
     return rows.map<Course>((row) => Course.fromJson(row)).toList();
   }
 
   Future<CourseDetail?> getCourse(String slug) async {
-    final courses = await _restGet(
-      'courses',
-      {
-        'select':
-            'id,slug,title,subtitle,description,cover_image_url,category,price_inr,is_published,created_at',
-        'slug': 'eq.$slug',
-        'is_published': 'eq.true',
-        'limit': '1',
-      },
-    );
+    final courses = await _restGet('courses', {
+      'select':
+          'id,slug,title,subtitle,description,cover_image_url,category,price_inr,is_published,program,branch,semester,created_at',
+      'slug': 'eq.$slug',
+      'is_published': 'eq.true',
+      'limit': '1',
+    });
     if (courses.isEmpty) return null;
     final course = Course.fromJson(courses.first);
-    final modules = await _restGet(
-      'modules',
-      {
-        'select':
-            'id,course_id,title,description,display_order,price_inr,page_count,is_free_preview,is_free_for_members,module_type,latest_text_version',
-        'course_id': 'eq.${course.id}',
-        'order': 'display_order.asc',
-      },
-    );
+    final modules = await _restGet('modules', {
+      'select':
+          'id,course_id,title,description,display_order,price_inr,page_count,is_free_preview,is_free_for_members,module_type,latest_text_version',
+      'course_id': 'eq.${course.id}',
+      'order': 'display_order.asc',
+    });
     return CourseDetail(
       course: course,
-      modules: modules.map<TextModule>((row) => TextModule.fromJson(row)).toList(),
+      modules: modules
+          .map<TextModule>((row) => TextModule.fromJson(row))
+          .toList(),
     );
   }
 
   Future<void> signIn(String email, String password) async {
-    final data = await _authPost(
-      '/token?grant_type=password',
-      {'email': email, 'password': password},
-    );
+    final data = await _authPost('/token?grant_type=password', {
+      'email': email,
+      'password': password,
+    });
     session = Session.fromJson(data);
     await _saveSession();
   }
 
   Future<void> signUp(String name, String email, String password) async {
-    await _authPost(
-      '/signup',
-      {
-        'email': email,
-        'password': password,
-        'data': {'full_name': name},
-      },
-    );
+    await _authPost('/signup', {
+      'email': email,
+      'password': password,
+      'data': {'full_name': name},
+    });
   }
 
   void signOut() {
     session = null;
-    SharedPreferences.getInstance().then((prefs) => prefs.remove('auth_session'));
+    SharedPreferences.getInstance().then(
+      (prefs) => prefs.remove('auth_session'),
+    );
   }
 
   /// Attempts to silently refresh the access token using the stored refresh_token.
@@ -129,10 +121,9 @@ class MatrixApi {
     final refreshToken = session?.refreshToken;
     if (refreshToken == null || refreshToken.isEmpty) return false;
     try {
-      final data = await _authPost(
-        '/token?grant_type=refresh_token',
-        {'refresh_token': refreshToken},
-      );
+      final data = await _authPost('/token?grant_type=refresh_token', {
+        'refresh_token': refreshToken,
+      });
       session = Session.fromJson(data);
       await _saveSession();
       return true;
@@ -144,19 +135,16 @@ class MatrixApi {
 
   Future<Profile?> getProfile() async {
     _requireSession();
-    final rows = await _restGet(
-      'profiles',
-      {
-        'select': 'id,matrix_id,email,full_name,avatar_url,created_at',
-        'id': 'eq.${session!.userId}',
-        'limit': '1',
-      },
-    );
+    final rows = await _restGet('profiles', {
+      'select': 'id,matrix_id,email,full_name,avatar_url,created_at',
+      'id': 'eq.${session!.userId}',
+      'limit': '1',
+    });
     if (rows.isEmpty) return null;
-    final roleRows = await _restGet(
-      'user_roles',
-      {'select': 'role', 'user_id': 'eq.${session!.userId}'},
-    );
+    final roleRows = await _restGet('user_roles', {
+      'select': 'role',
+      'user_id': 'eq.${session!.userId}',
+    });
     return Profile.fromJson(
       rows.first,
       isAdmin: roleRows.any((row) => row['role'] == 'admin'),
@@ -165,56 +153,50 @@ class MatrixApi {
 
   Future<Library> getLibrary() async {
     _requireSession();
-    final purchaseRows = await _restGet(
-      'purchases',
-      {
-        'select': 'id,course_id,module_id,amount_inr,status,created_at',
-        'status': 'eq.completed',
-        'order': 'created_at.desc',
-      },
-    );
-    final purchases =
-        purchaseRows.map<Purchase>((row) => Purchase.fromJson(row)).toList();
+    final purchaseRows = await _restGet('purchases', {
+      'select': 'id,course_id,module_id,amount_inr,status,created_at',
+      'status': 'eq.completed',
+      'order': 'created_at.desc',
+    });
+    final purchases = purchaseRows
+        .map<Purchase>((row) => Purchase.fromJson(row))
+        .toList();
 
-    final courseIds =
-        purchases.map((p) => p.courseId).whereType<String>().toSet().toList();
-    final moduleIds =
-        purchases.map((p) => p.moduleId).whereType<String>().toSet().toList();
+    final courseIds = purchases
+        .map((p) => p.courseId)
+        .whereType<String>()
+        .toSet()
+        .toList();
+    final moduleIds = purchases
+        .map((p) => p.moduleId)
+        .whereType<String>()
+        .toSet()
+        .toList();
 
     final courses = courseIds.isEmpty
         ? <Course>[]
-        : (await _restGet(
-            'courses',
-            {
-              'select': 'id,slug,title,subtitle,cover_image_url,category,price_inr',
-              'id': 'in.(${courseIds.join(',')})',
-            },
-          ))
-            .map<Course>((row) => Course.fromJson(row))
-            .toList();
+        : (await _restGet('courses', {
+            'select':
+                'id,slug,title,subtitle,cover_image_url,category,price_inr',
+            'id': 'in.(${courseIds.join(',')})',
+          })).map<Course>((row) => Course.fromJson(row)).toList();
 
     final modules = moduleIds.isEmpty
         ? <TextModule>[]
-        : (await _restGet(
-            'modules',
-            {
-              'select':
-                  'id,course_id,title,description,display_order,price_inr,page_count,is_free_preview,is_free_for_members,module_type,latest_text_version',
-              'id': 'in.(${moduleIds.join(',')})',
-              'order': 'display_order.asc',
-            },
-          ))
-            .map<TextModule>((row) => TextModule.fromJson(row))
-            .toList();
+        : (await _restGet('modules', {
+            'select':
+                'id,course_id,title,description,display_order,price_inr,page_count,is_free_preview,is_free_for_members,module_type,latest_text_version',
+            'id': 'in.(${moduleIds.join(',')})',
+            'order': 'display_order.asc',
+          })).map<TextModule>((row) => TextModule.fromJson(row)).toList();
 
     return Library(courses: courses, modules: modules, purchases: purchases);
   }
 
   Future<Map<String, String>> getImageTokenMap() async {
-    final rows = await _restGet(
-      'course_images',
-      {'select': 'token,storage_path'},
-    );
+    final rows = await _restGet('course_images', {
+      'select': 'token,storage_path',
+    });
     final map = <String, String>{};
     for (final row in rows) {
       final token = row['token']?.toString();
@@ -228,53 +210,45 @@ class MatrixApi {
 
   Future<ModuleText> getModuleText(String moduleId) async {
     _requireSession();
-    final modules = await _restGet(
-      'modules',
-      {
-        'select':
-            'id,course_id,title,description,display_order,price_inr,page_count,is_free_preview,is_free_for_members,module_type,latest_text_version',
-        'id': 'eq.$moduleId',
-        'limit': '1',
-      },
-    );
+    final modules = await _restGet('modules', {
+      'select':
+          'id,course_id,title,description,display_order,price_inr,page_count,is_free_preview,is_free_for_members,module_type,latest_text_version',
+      'id': 'eq.$moduleId',
+      'limit': '1',
+    });
     if (modules.isEmpty) throw ApiException('Module not found.');
     final module = TextModule.fromJson(modules.first);
-    final versions = await _restGet(
-      'module_text_versions',
-      {
-        'select': 'version,content,created_at,is_latest',
-        'module_id': 'eq.$moduleId',
-        'is_latest': 'eq.true',
-        'limit': '1',
-      },
-    );
+    final versions = await _restGet('module_text_versions', {
+      'select': 'version,content,created_at,is_latest',
+      'module_id': 'eq.$moduleId',
+      'is_latest': 'eq.true',
+      'limit': '1',
+    });
     if (versions.isEmpty) {
       throw ApiException('This module has no text content yet.');
     }
-    final qaRows = await _restGet(
-      'module_qa',
-      {
-        'select': 'id,question,answer_text,answer_images,display_order',
-        'module_id': 'eq.$moduleId',
-        'order': 'display_order.asc',
-      },
-    );
+    final qaRows = await _restGet('module_qa', {
+      'select': 'id,question,answer_text,answer_images,display_order',
+      'module_id': 'eq.$moduleId',
+      'order': 'display_order.asc',
+    });
     // Fetch media for inline image rendering
-    final mediaRows = await _restGet(
-      'module_media',
-      {
-        'select': 'key,storage_path,mime_type',
-        'module_id': 'eq.$moduleId',
-      },
-    );
+    final mediaRows = await _restGet('module_media', {
+      'select': 'key,storage_path,mime_type',
+      'module_id': 'eq.$moduleId',
+    });
     final mediaMap = <String, ModuleMedia>{};
     for (final m in mediaRows) {
       final key = m['key']?.toString();
       final storagePath = m['storage_path']?.toString();
       if (key != null && storagePath != null) {
         // Construct the URL using the storage path
-        final url = '$supabaseUrl/storage/v1/object/public/course-media/$storagePath';
-        mediaMap[key] = ModuleMedia(url: url, mimeType: m['mime_type']?.toString());
+        final url =
+            '$supabaseUrl/storage/v1/object/public/course-media/$storagePath';
+        mediaMap[key] = ModuleMedia(
+          url: url,
+          mimeType: m['mime_type']?.toString(),
+        );
       }
     }
 
@@ -297,13 +271,10 @@ class MatrixApi {
 
   Future<List<Purchase>> getPurchases() async {
     _requireSession();
-    final rows = await _restGet(
-      'purchases',
-      {
-        'select': 'id,course_id,module_id,amount_inr,status,created_at',
-        'order': 'created_at.desc',
-      },
-    );
+    final rows = await _restGet('purchases', {
+      'select': 'id,course_id,module_id,amount_inr,status,created_at',
+      'order': 'created_at.desc',
+    });
     return rows.map<Purchase>((row) => Purchase.fromJson(row)).toList();
   }
 
@@ -311,14 +282,11 @@ class MatrixApi {
 
   Future<List<Course>> adminListCourses() async {
     _requireSession();
-    final rows = await _restGet(
-      'courses',
-      {
-        'select':
-            'id,slug,title,subtitle,description,cover_image_url,category,price_inr,is_published,created_at',
-        'order': 'created_at.desc',
-      },
-    );
+    final rows = await _restGet('courses', {
+      'select':
+          'id,slug,title,subtitle,description,cover_image_url,category,price_inr,is_published,program,branch,semester,created_at',
+      'order': 'created_at.desc',
+    });
     return rows.map<Course>((row) => Course.fromJson(row)).toList();
   }
 
@@ -353,55 +321,51 @@ class MatrixApi {
   // ─── Admin: module text versions ────────────────────────────────────────────
 
   Future<List<ModuleTextVersion>> adminListModuleTextVersions(
-      String moduleId) async {
+    String moduleId,
+  ) async {
     _requireSession();
-    final rows = await _restGet(
-      'module_text_versions',
-      {
-        'select': 'id,version,is_latest,created_at,editor_id',
-        'module_id': 'eq.$moduleId',
-        'order': 'version.desc',
-      },
-    );
-    return rows.map<ModuleTextVersion>((r) => ModuleTextVersion.fromJson(r)).toList();
+    final rows = await _restGet('module_text_versions', {
+      'select': 'id,version,is_latest,created_at,editor_id',
+      'module_id': 'eq.$moduleId',
+      'order': 'version.desc',
+    });
+    return rows
+        .map<ModuleTextVersion>((r) => ModuleTextVersion.fromJson(r))
+        .toList();
   }
 
-  Future<String> adminGetModuleTextVersion(
-      String moduleId, int version) async {
+  Future<String> adminGetModuleTextVersion(String moduleId, int version) async {
     _requireSession();
-    final rows = await _restGet(
-      'module_text_versions',
-      {
-        'select': 'content',
-        'module_id': 'eq.$moduleId',
-        'version': 'eq.$version',
-        'limit': '1',
-      },
-    );
+    final rows = await _restGet('module_text_versions', {
+      'select': 'content',
+      'module_id': 'eq.$moduleId',
+      'version': 'eq.$version',
+      'limit': '1',
+    });
     return rows.isEmpty ? '' : rows.first['content']?.toString() ?? '';
   }
 
   Future<int> adminRestoreModuleTextVersion(
-      String moduleId, int version) async {
+    String moduleId,
+    int version,
+  ) async {
     _requireSession();
     final content = await adminGetModuleTextVersion(moduleId, version);
-    final versions = await _restGet(
-      'module_text_versions',
-      {
-        'select': 'version',
-        'module_id': 'eq.$moduleId',
-        'order': 'version.desc',
-        'limit': '1',
-      },
-    );
+    final versions = await _restGet('module_text_versions', {
+      'select': 'version',
+      'module_id': 'eq.$moduleId',
+      'order': 'version.desc',
+      'limit': '1',
+    });
     final next = versions.isEmpty
         ? 1
         : ((versions.first['version'] as num?)?.toInt() ?? 0) + 1;
     // Mark old latest as not latest
     await _restPatch(
-        'module_text_versions',
-        {'module_id': 'eq.$moduleId', 'is_latest': 'eq.true'},
-        {'is_latest': false});
+      'module_text_versions',
+      {'module_id': 'eq.$moduleId', 'is_latest': 'eq.true'},
+      {'is_latest': false},
+    );
     await _restPost('module_text_versions', {
       'module_id': moduleId,
       'version': next,
@@ -416,14 +380,11 @@ class MatrixApi {
 
   Future<List<ModuleQa>> adminListModuleQa(String moduleId) async {
     _requireSession();
-    final rows = await _restGet(
-      'module_qa',
-      {
-        'select': 'id,question,answer_text,answer_images,display_order',
-        'module_id': 'eq.$moduleId',
-        'order': 'display_order.asc',
-      },
-    );
+    final rows = await _restGet('module_qa', {
+      'select': 'id,question,answer_text,answer_images,display_order',
+      'module_id': 'eq.$moduleId',
+      'order': 'display_order.asc',
+    });
     return rows.map<ModuleQa>((r) => ModuleQa.fromJson(r)).toList();
   }
 
@@ -466,10 +427,7 @@ class MatrixApi {
   /// browser; on redirect the user will land back in the app.
   String getGoogleOAuthUrl(String redirectTo) {
     final uri = Uri.parse('$supabaseUrl/auth/v1/authorize').replace(
-      queryParameters: {
-        'provider': 'google',
-        'redirect_to': redirectTo,
-      },
+      queryParameters: {'provider': 'google', 'redirect_to': redirectTo},
     );
     return uri.toString();
   }
@@ -525,21 +483,16 @@ class MatrixApi {
     }
   }
 
-
-
   // ─── Admin: module text save (unchanged) ─────────────────────────────────────
 
   Future<void> adminSaveModuleText(String moduleId, String content) async {
     _requireSession();
-    final versions = await _restGet(
-      'module_text_versions',
-      {
-        'select': 'version',
-        'module_id': 'eq.$moduleId',
-        'order': 'version.desc',
-        'limit': '1',
-      },
-    );
+    final versions = await _restGet('module_text_versions', {
+      'select': 'version',
+      'module_id': 'eq.$moduleId',
+      'order': 'version.desc',
+      'limit': '1',
+    });
     final nextVersion = versions.isEmpty
         ? 1
         : ((versions.first['version'] as num?)?.toInt() ?? 0) + 1;
@@ -556,13 +509,10 @@ class MatrixApi {
 
   Future<List<Map<String, dynamic>>> adminListImageTokens() async {
     _requireSession();
-    final rows = await _restGet(
-      'course_images',
-      {
-        'select': 'id,token,storage_path,created_at',
-        'order': 'created_at.desc',
-      },
-    );
+    final rows = await _restGet('course_images', {
+      'select': 'id,token,storage_path,created_at',
+      'order': 'created_at.desc',
+    });
     return rows.cast<Map<String, dynamic>>();
   }
 
@@ -633,9 +583,9 @@ class MatrixApi {
       '$supabaseUrl/storage/v1/object/public/course-images/$storagePath';
 
   Future<void> _restDelete(String table, Map<String, String> query) async {
-    final uri = Uri.parse('$supabaseUrl/rest/v1/$table').replace(
-      queryParameters: query,
-    );
+    final uri = Uri.parse(
+      '$supabaseUrl/rest/v1/$table',
+    ).replace(queryParameters: query);
     final request = await _client.deleteUrl(uri);
     _setRestHeaders(request);
     await _readResponse(await request.close());
@@ -655,9 +605,9 @@ class MatrixApi {
     String table,
     Map<String, String> query,
   ) async {
-    final uri = Uri.parse('$supabaseUrl/rest/v1/$table').replace(
-      queryParameters: query,
-    );
+    final uri = Uri.parse(
+      '$supabaseUrl/rest/v1/$table',
+    ).replace(queryParameters: query);
     final request = await _client.getUrl(uri);
     _setRestHeaders(request);
     final response = await request.close();
@@ -666,7 +616,9 @@ class MatrixApi {
   }
 
   Future<void> _restPost(String table, Map<String, dynamic> body) async {
-    final request = await _client.postUrl(Uri.parse('$supabaseUrl/rest/v1/$table'));
+    final request = await _client.postUrl(
+      Uri.parse('$supabaseUrl/rest/v1/$table'),
+    );
     _setRestHeaders(request);
     request.headers.contentType = ContentType.json;
     request.headers.set('Prefer', 'return=minimal');
@@ -679,9 +631,9 @@ class MatrixApi {
     Map<String, String> query,
     Map<String, dynamic> body,
   ) async {
-    final uri = Uri.parse('$supabaseUrl/rest/v1/$table').replace(
-      queryParameters: query,
-    );
+    final uri = Uri.parse(
+      '$supabaseUrl/rest/v1/$table',
+    ).replace(queryParameters: query);
     final request = await _client.patchUrl(uri);
     _setRestHeaders(request);
     request.headers.contentType = ContentType.json;
@@ -692,7 +644,10 @@ class MatrixApi {
 
   void _setRestHeaders(HttpClientRequest request) {
     request.headers.set('apikey', supabaseAnonKey);
-    request.headers.set('Authorization', 'Bearer ${session?.accessToken ?? supabaseAnonKey}');
+    request.headers.set(
+      'Authorization',
+      'Bearer ${session?.accessToken ?? supabaseAnonKey}',
+    );
   }
 
   Future<dynamic> _readResponse(HttpClientResponse response) async {
@@ -701,10 +656,12 @@ class MatrixApi {
     if (!ok) {
       try {
         final data = jsonDecode(text);
-        throw ApiException(data['msg']?.toString() ??
-            data['message']?.toString() ??
-            data['error_description']?.toString() ??
-            'Request failed (${response.statusCode}).');
+        throw ApiException(
+          data['msg']?.toString() ??
+              data['message']?.toString() ??
+              data['error_description']?.toString() ??
+              'Request failed (${response.statusCode}).',
+        );
       } on FormatException {
         throw ApiException(text.isEmpty ? 'Request failed.' : text);
       }

@@ -3,6 +3,7 @@ import 'package:matrixf/src/screens/course_detail_screen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/models.dart';
 import '../app.dart'; // For MatrixScope
+import '../screens/program_browse_screens.dart';
 // ─── Rich Text Renderer ───────────────────────────────────────────────────────
 
 // ─── Course & Module Widgets ──────────────────────────────────────────────────
@@ -29,14 +30,15 @@ class CourseCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   if ((course.category ?? '').isNotEmpty)
-                    Text(course.category!.toUpperCase(),
-                        style: Theme.of(context).textTheme.labelSmall),
+                    Text(
+                      course.category!.toUpperCase(),
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
                   Text(
                     course.title,
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w700),
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   if ((course.subtitle ?? '').isNotEmpty)
                     Padding(
@@ -45,8 +47,9 @@ class CourseCard extends StatelessWidget {
                         course.subtitle!,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style:
-                            TextStyle(color: Colors.black.withValues(alpha: .62)),
+                        style: TextStyle(
+                          color: Colors.black.withValues(alpha: .62),
+                        ),
                       ),
                     ),
                   const SizedBox(height: 8),
@@ -81,10 +84,8 @@ class CourseImage extends StatelessWidget {
       child: CachedNetworkImage(
         imageUrl: url!,
         fit: BoxFit.cover,
-        placeholder: (_, _) =>
-            const Center(child: CircularProgressIndicator()),
-        errorWidget: (_, _, _) =>
-            const Icon(Icons.broken_image_outlined),
+        placeholder: (_, _) => const Center(child: CircularProgressIndicator()),
+        errorWidget: (_, _, _) => const Icon(Icons.broken_image_outlined),
       ),
     );
   }
@@ -100,24 +101,31 @@ class CourseHero extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: CourseImage(url: course.coverImageUrl)),
+          borderRadius: BorderRadius.circular(8),
+          child: CourseImage(url: course.coverImageUrl),
+        ),
         const SizedBox(height: 16),
         if ((course.category ?? '').isNotEmpty)
-          Text(course.category!.toUpperCase(),
-              style: Theme.of(context).textTheme.labelSmall),
+          Text(
+            course.category!.toUpperCase(),
+            style: Theme.of(context).textTheme.labelSmall,
+          ),
         Text(course.title, style: Theme.of(context).textTheme.headlineMedium),
         if ((course.subtitle ?? '').isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 8),
-            child: Text(course.subtitle!,
-                style: Theme.of(context).textTheme.bodyLarge),
+            child: Text(
+              course.subtitle!,
+              style: Theme.of(context).textTheme.bodyLarge,
+            ),
           ),
         if ((course.description ?? '').isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 14),
-            child: Text(course.description!,
-                style: const TextStyle(height: 1.5)),
+            child: Text(
+              course.description!,
+              style: const TextStyle(height: 1.5),
+            ),
           ),
       ],
     );
@@ -155,29 +163,34 @@ class ModuleTile extends StatelessWidget {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if ((module.description ?? '').isNotEmpty) Text(module.description!),
-            Wrap(spacing: 6, children: [
-              if (module.isFreePreview) const Chip(label: Text('Free preview')),
-              if (module.isFreeForMembers) const Chip(label: Text('Members')),
-              if (!open && module.priceInr > 0 && !needsSignIn)
-                Chip(label: Text(formatInr(module.priceInr))),
-            ]),
+            if ((module.description ?? '').isNotEmpty)
+              Text(module.description!),
+            Wrap(
+              spacing: 6,
+              children: [
+                if (module.isFreePreview)
+                  const Chip(label: Text('Free preview')),
+                if (module.isFreeForMembers) const Chip(label: Text('Members')),
+                if (!open && module.priceInr > 0 && !needsSignIn)
+                  Chip(label: Text(formatInr(module.priceInr))),
+              ],
+            ),
           ],
         ),
         trailing: open
             ? const Icon(Icons.play_arrow)
             : needsSignIn
-                ? const Icon(Icons.person_outline)
-                : module.priceInr > 0
-                    ? const Icon(Icons.shopping_bag_outlined)
-                    : const Icon(Icons.lock_outline),
+            ? const Icon(Icons.person_outline)
+            : module.priceInr > 0
+            ? const Icon(Icons.shopping_bag_outlined)
+            : const Icon(Icons.lock_outline),
         onTap: open
             ? onOpen
             : needsSignIn
-                ? () => showSnack(context, 'Sign in to open this module.')
-                : module.priceInr > 0
-                    ? onBuy
-                    : () => showSnack(context, 'This module is locked.'),
+            ? () => showSnack(context, 'Sign in to open this module.')
+            : module.priceInr > 0
+            ? onBuy
+            : () => showSnack(context, 'This module is locked.'),
       ),
     );
   }
@@ -194,10 +207,9 @@ class BrandHeader extends StatelessWidget {
       children: [
         Text(
           'Matrix',
-          style: Theme.of(context)
-              .textTheme
-              .headlineSmall
-              ?.copyWith(fontWeight: FontWeight.w800),
+          style: Theme.of(
+            context,
+          ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
         ),
         const SizedBox(width: 5),
         Container(
@@ -222,7 +234,9 @@ class SectionTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Expanded(child: Text(title, style: Theme.of(context).textTheme.titleLarge)),
+        Expanded(
+          child: Text(title, style: Theme.of(context).textTheme.titleLarge),
+        ),
         ?action,
       ],
     );
@@ -230,7 +244,12 @@ class SectionTitle extends StatelessWidget {
 }
 
 class TrustTile extends StatelessWidget {
-  const TrustTile({super.key, required this.icon, required this.title, required this.body});
+  const TrustTile({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.body,
+  });
   final IconData icon;
   final String title;
   final String body;
@@ -310,9 +329,10 @@ class ErrorBox extends StatelessWidget {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(18),
-        child: Text(message,
-            style:
-                TextStyle(color: Theme.of(context).colorScheme.error)),
+        child: Text(
+          message,
+          style: TextStyle(color: Theme.of(context).colorScheme.error),
+        ),
       ),
     );
   }
@@ -334,7 +354,12 @@ class CenteredError extends StatelessWidget {
 }
 
 class SignInPrompt extends StatelessWidget {
-  const SignInPrompt({super.key, required this.title, required this.body, required this.onTap});
+  const SignInPrompt({
+    super.key,
+    required this.title,
+    required this.body,
+    required this.onTap,
+  });
   final String title;
   final String body;
   final VoidCallback onTap;
@@ -346,8 +371,11 @@ class SignInPrompt extends StatelessWidget {
       children: [
         const BrandHeader(),
         const SizedBox(height: 32),
-        Icon(Icons.lock_outline,
-            size: 42, color: Theme.of(context).colorScheme.primary),
+        Icon(
+          Icons.lock_outline,
+          size: 42,
+          color: Theme.of(context).colorScheme.primary,
+        ),
         const SizedBox(height: 14),
         Text(title, style: Theme.of(context).textTheme.headlineMedium),
         const SizedBox(height: 8),
@@ -371,9 +399,11 @@ class InfoRow extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-              child: Text(label,
-                  style: TextStyle(
-                      color: Colors.black.withValues(alpha: .58)))),
+            child: Text(
+              label,
+              style: TextStyle(color: Colors.black.withValues(alpha: .58)),
+            ),
+          ),
           Flexible(child: Text(value, textAlign: TextAlign.end)),
         ],
       ),
@@ -384,8 +414,9 @@ class InfoRow extends StatelessWidget {
 // ─── Navigation helpers ───────────────────────────────────────────────────────
 
 void openCourse(BuildContext context, String slug) {
-  Navigator.of(context)
-      .push(MaterialPageRoute(builder: (_) => CourseDetailScreen(slug: slug)));
+  Navigator.of(
+    context,
+  ).push(MaterialPageRoute(builder: (_) => CourseDetailScreen(slug: slug)));
 }
 
 void showSnack(BuildContext context, String message) {
@@ -408,48 +439,52 @@ void showQaSheet(BuildContext context, List<ModuleQa> questions) {
         controller: controller,
         padding: const EdgeInsets.all(16),
         children: [
-          Text('Questions & Answers',
-              style: Theme.of(context).textTheme.titleLarge),
+          Text(
+            'Questions & Answers',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
           const SizedBox(height: 10),
           if (questions.isEmpty)
             const EmptyBox('No questions yet.')
           else
-            ...questions.map((qa) => Card(
-                  child: ExpansionTile(
-                    title: Text(qa.question),
-                    childrenPadding:
-                        const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    children: [
-                      if (qa.answer.isNotEmpty) Text(qa.answer),
-                      // ── Answer images grid ──────────────────────────────
-                      if (qa.answerImages.isNotEmpty) ...[
-                        const SizedBox(height: 10),
-                        GridView.count(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          crossAxisCount: 2,
-                          crossAxisSpacing: 8,
-                          mainAxisSpacing: 8,
-                          children: qa.answerImages
-                              .map((url) => ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: CachedNetworkImage(
-                                      imageUrl: url,
-                                      fit: BoxFit.cover,
-                                      placeholder: (_, _) => const Center(
-                                          child:
-                                              CircularProgressIndicator()),
-                                      errorWidget: (_, _, _) =>
-                                          const Icon(
-                                              Icons.broken_image_outlined),
-                                    ),
-                                  ))
-                              .toList(),
-                        ),
-                      ],
+            ...questions.map(
+              (qa) => Card(
+                child: ExpansionTile(
+                  title: Text(qa.question),
+                  childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  children: [
+                    if (qa.answer.isNotEmpty) Text(qa.answer),
+                    // ── Answer images grid ──────────────────────────────
+                    if (qa.answerImages.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      GridView.count(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        crossAxisCount: 2,
+                        crossAxisSpacing: 8,
+                        mainAxisSpacing: 8,
+                        children: qa.answerImages
+                            .map(
+                              (url) => ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: CachedNetworkImage(
+                                  imageUrl: url,
+                                  fit: BoxFit.cover,
+                                  placeholder: (_, _) => const Center(
+                                    child: CircularProgressIndicator(),
+                                  ),
+                                  errorWidget: (_, _, _) =>
+                                      const Icon(Icons.broken_image_outlined),
+                                ),
+                              ),
+                            )
+                            .toList(),
+                      ),
                     ],
-                  ),
-                )),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
     ),
@@ -470,9 +505,13 @@ void showCourseEditor(
   final description = TextEditingController(text: existing?.description ?? '');
   final category = TextEditingController(text: existing?.category ?? '');
   final price = TextEditingController(
-      text: (existing?.priceInr ?? 0).toString());
+    text: (existing?.priceInr ?? 0).toString(),
+  );
   final coverUrl = TextEditingController(text: existing?.coverImageUrl ?? '');
   var published = existing?.isPublished ?? false;
+  final program = TextEditingController(text: existing?.program ?? '');
+  final branch = TextEditingController(text: existing?.branch ?? '');
+  final semester = TextEditingController(text: existing?.semester ?? '');
 
   showModalBottomSheet<void>(
     context: context,
@@ -480,22 +519,61 @@ void showCourseEditor(
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setSheetState) => Padding(
         padding: EdgeInsets.fromLTRB(
-            16, 16, 16, MediaQuery.of(ctx).viewInsets.bottom + 16),
+          16,
+          16,
+          16,
+          MediaQuery.of(ctx).viewInsets.bottom + 16,
+        ),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(existing?.id == null ? 'New course' : 'Edit course',
-                  style: Theme.of(ctx).textTheme.titleLarge),
+              Text(
+                existing?.id == null ? 'New course' : 'Edit course',
+                style: Theme.of(ctx).textTheme.titleLarge,
+              ),
               const SizedBox(height: 12),
-              TextField(controller: title, decoration: const InputDecoration(labelText: 'Title')),
+              TextField(
+                controller: title,
+                decoration: const InputDecoration(labelText: 'Title'),
+              ),
               const SizedBox(height: 8),
-              TextField(controller: slug, decoration: const InputDecoration(labelText: 'Slug')),
+              TextField(
+                controller: slug,
+                decoration: const InputDecoration(labelText: 'Slug'),
+              ),
               const SizedBox(height: 8),
-              TextField(controller: subtitle, decoration: const InputDecoration(labelText: 'Subtitle')),
+              TextField(
+                controller: subtitle,
+                decoration: const InputDecoration(labelText: 'Subtitle'),
+              ),
               const SizedBox(height: 8),
-              TextField(controller: category, decoration: const InputDecoration(labelText: 'Category')),
+              TextField(
+                controller: category,
+                decoration: const InputDecoration(labelText: 'Category'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: program,
+                decoration: const InputDecoration(
+                  labelText: 'Program (e.g. B.Tech, BCA)',
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: branch,
+                decoration: const InputDecoration(
+                  labelText: 'Branch (e.g. CSE, ECE)',
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: semester,
+                decoration: const InputDecoration(
+                  labelText: 'Semester (e.g. Semester 3)',
+                ),
+              ),
               const SizedBox(height: 8),
               TextField(
                 controller: price,
@@ -512,7 +590,9 @@ void showCourseEditor(
                 controller: description,
                 maxLines: 4,
                 decoration: const InputDecoration(
-                    labelText: 'Description', alignLabelWithHint: true),
+                  labelText: 'Description',
+                  alignLabelWithHint: true,
+                ),
               ),
               SwitchListTile(
                 value: published,
@@ -522,19 +602,24 @@ void showCourseEditor(
               FilledButton(
                 onPressed: () async {
                   try {
-                    await api.adminSaveCourse(CourseDraft(
-                      id: existing?.id,
-                      slug: slug.text.trim(),
-                      title: title.text.trim(),
-                      subtitle: subtitle.text.trim(),
-                      description: description.text.trim(),
-                      category: category.text.trim(),
-                      priceInr: int.tryParse(price.text) ?? 0,
-                      isPublished: published,
-                      coverImageUrl: coverUrl.text.trim().isEmpty
-                          ? null
-                          : coverUrl.text.trim(),
-                    ));
+                    await api.adminSaveCourse(
+                      CourseDraft(
+                        id: existing?.id,
+                        slug: slug.text.trim(),
+                        title: title.text.trim(),
+                        subtitle: subtitle.text.trim(),
+                        description: description.text.trim(),
+                        category: category.text.trim(),
+                        priceInr: int.tryParse(price.text) ?? 0,
+                        isPublished: published,
+                        coverImageUrl: coverUrl.text.trim().isEmpty
+                            ? null
+                            : coverUrl.text.trim(),
+                        program: program.text.trim(),
+                        branch: branch.text.trim(),
+                        semester: semester.text.trim(),
+                      ),
+                    );
                     if (ctx.mounted) Navigator.pop(ctx);
                     onSaved();
                   } catch (e) {
@@ -560,10 +645,10 @@ void showModuleEditor(
   final api = MatrixScope.of(context).api;
   final title = TextEditingController(text: existing?.title ?? '');
   final description = TextEditingController(text: existing?.description ?? '');
-  final order = TextEditingController(
-      text: (existing?.order ?? 0).toString());
+  final order = TextEditingController(text: (existing?.order ?? 0).toString());
   final price = TextEditingController(
-      text: (existing?.priceInr ?? 0).toString());
+    text: (existing?.priceInr ?? 0).toString(),
+  );
   var freePreview = existing?.isFreePreview ?? false;
   var freeMembers = existing?.isFreeForMembers ?? true;
 
@@ -573,18 +658,30 @@ void showModuleEditor(
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setSheetState) => Padding(
         padding: EdgeInsets.fromLTRB(
-            16, 16, 16, MediaQuery.of(ctx).viewInsets.bottom + 16),
+          16,
+          16,
+          16,
+          MediaQuery.of(ctx).viewInsets.bottom + 16,
+        ),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(existing == null ? 'New text module' : 'Edit module',
-                  style: Theme.of(ctx).textTheme.titleLarge),
+              Text(
+                existing == null ? 'New text module' : 'Edit module',
+                style: Theme.of(ctx).textTheme.titleLarge,
+              ),
               const SizedBox(height: 12),
-              TextField(controller: title, decoration: const InputDecoration(labelText: 'Title')),
+              TextField(
+                controller: title,
+                decoration: const InputDecoration(labelText: 'Title'),
+              ),
               const SizedBox(height: 8),
-              TextField(controller: description, decoration: const InputDecoration(labelText: 'Description')),
+              TextField(
+                controller: description,
+                decoration: const InputDecoration(labelText: 'Description'),
+              ),
               const SizedBox(height: 8),
               TextField(
                 controller: order,
@@ -610,16 +707,18 @@ void showModuleEditor(
               FilledButton(
                 onPressed: () async {
                   try {
-                    await api.adminSaveModule(ModuleDraft(
-                      id: existing?.id,
-                      courseId: courseId,
-                      title: title.text.trim(),
-                      description: description.text.trim(),
-                      order: int.tryParse(order.text) ?? 0,
-                      priceInr: int.tryParse(price.text) ?? 0,
-                      isFreePreview: freePreview,
-                      isFreeForMembers: freeMembers,
-                    ));
+                    await api.adminSaveModule(
+                      ModuleDraft(
+                        id: existing?.id,
+                        courseId: courseId,
+                        title: title.text.trim(),
+                        description: description.text.trim(),
+                        order: int.tryParse(order.text) ?? 0,
+                        priceInr: int.tryParse(price.text) ?? 0,
+                        isFreePreview: freePreview,
+                        isFreeForMembers: freeMembers,
+                      ),
+                    );
                     if (ctx.mounted) Navigator.pop(ctx);
                     onSaved();
                   } catch (e) {
@@ -634,4 +733,88 @@ void showModuleEditor(
       ),
     ),
   );
+}
+
+// ─── Program Grid (Home screen) ───────────────────────────────────────────────
+
+class ProgramGrid extends StatelessWidget {
+  const ProgramGrid({super.key, required this.courses});
+  final List<Course> courses;
+
+  @override
+  Widget build(BuildContext context) {
+    final programs =
+        courses
+            .map((c) => (c.program ?? '').trim())
+            .where((p) => p.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
+
+    if (programs.isEmpty) {
+      return const EmptyBox('No programs added yet.');
+    }
+
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: programs.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        childAspectRatio: 1.4,
+      ),
+      itemBuilder: (context, i) {
+        final program = programs[i];
+        return ProgramTile(
+          program: program,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) =>
+                  BranchListScreen(program: program, allCourses: courses),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class ProgramTile extends StatelessWidget {
+  const ProgramTile({super.key, required this.program, required this.onTap});
+  final String program;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      color: Theme.of(context).colorScheme.primaryContainer,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              Icon(
+                Icons.school_outlined,
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                program,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

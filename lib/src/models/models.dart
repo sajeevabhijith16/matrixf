@@ -22,11 +22,11 @@ class Session {
   final String? email;
 
   Map<String, dynamic> toJson() => {
-        'access_token': accessToken,
-        'refresh_token': refreshToken,
-        'user_id': userId,
-        'email': email,
-      };
+    'access_token': accessToken,
+    'refresh_token': refreshToken,
+    'user_id': userId,
+    'email': email,
+  };
 }
 
 class Course {
@@ -39,18 +39,24 @@ class Course {
     this.coverImageUrl,
     this.category,
     required this.priceInr,
+    this.program,
+    this.branch,
+    this.semester,
   });
 
   factory Course.fromJson(Map<String, dynamic> json) => Course(
-        id: json['id']?.toString() ?? '',
-        slug: json['slug']?.toString() ?? '',
-        title: json['title']?.toString() ?? 'Untitled course',
-        subtitle: json['subtitle']?.toString(),
-        description: json['description']?.toString(),
-        coverImageUrl: json['cover_image_url']?.toString(),
-        category: json['category']?.toString(),
-        priceInr: (json['price_inr'] as num?)?.toInt() ?? 0,
-      );
+    id: json['id']?.toString() ?? '',
+    slug: json['slug']?.toString() ?? '',
+    title: json['title']?.toString() ?? 'Untitled course',
+    subtitle: json['subtitle']?.toString(),
+    description: json['description']?.toString(),
+    coverImageUrl: json['cover_image_url']?.toString(),
+    category: json['category']?.toString(),
+    priceInr: (json['price_inr'] as num?)?.toInt() ?? 0,
+    program: json['program']?.toString(),
+    branch: json['branch']?.toString(),
+    semester: json['semester']?.toString(),
+  );
 
   final String id;
   final String slug;
@@ -60,6 +66,9 @@ class Course {
   final String? coverImageUrl;
   final String? category;
   final int priceInr;
+  final String? program;
+  final String? branch;
+  final String? semester;
 }
 
 class CourseDetail {
@@ -83,17 +92,17 @@ class TextModule {
   });
 
   factory TextModule.fromJson(Map<String, dynamic> json) => TextModule(
-        id: json['id']?.toString() ?? '',
-        courseId: json['course_id']?.toString() ?? '',
-        title: json['title']?.toString() ?? 'Untitled module',
-        description: json['description']?.toString(),
-        order: (json['display_order'] as num?)?.toInt() ?? 0,
-        priceInr: (json['price_inr'] as num?)?.toInt() ?? 0,
-        pageCount: (json['page_count'] as num?)?.toInt(),
-        isFreePreview: json['is_free_preview'] == true,
-        isFreeForMembers: json['is_free_for_members'] == true,
-        moduleType: json['module_type']?.toString() ?? 'text',
-      );
+    id: json['id']?.toString() ?? '',
+    courseId: json['course_id']?.toString() ?? '',
+    title: json['title']?.toString() ?? 'Untitled module',
+    description: json['description']?.toString(),
+    order: (json['display_order'] as num?)?.toInt() ?? 0,
+    priceInr: (json['price_inr'] as num?)?.toInt() ?? 0,
+    pageCount: (json['page_count'] as num?)?.toInt(),
+    isFreePreview: json['is_free_preview'] == true,
+    isFreeForMembers: json['is_free_for_members'] == true,
+    moduleType: json['module_type']?.toString() ?? 'text',
+  );
 
   final String id;
   final String courseId;
@@ -137,14 +146,14 @@ class ModuleQa {
   });
 
   factory ModuleQa.fromJson(Map<String, dynamic> json) => ModuleQa(
-        id: json['id']?.toString() ?? '',
-        question: json['question']?.toString() ?? '',
-        answer: json['answer_text']?.toString() ?? '',
-        answerImages: (json['answer_images'] as List<dynamic>? ?? [])
-            .map((e) => e.toString())
-            .toList(),
-        displayOrder: (json['display_order'] as num?)?.toInt() ?? 0,
-      );
+    id: json['id']?.toString() ?? '',
+    question: json['question']?.toString() ?? '',
+    answer: json['answer_text']?.toString() ?? '',
+    answerImages: (json['answer_images'] as List<dynamic>? ?? [])
+        .map((e) => e.toString())
+        .toList(),
+    displayOrder: (json['display_order'] as num?)?.toInt() ?? 0,
+  );
 
   final String id;
   final String question;
@@ -184,14 +193,16 @@ class Profile {
     required this.isAdmin,
   });
 
-  factory Profile.fromJson(Map<String, dynamic> json, {required bool isAdmin}) =>
-      Profile(
-        id: json['id']?.toString() ?? '',
-        matrixId: json['matrix_id']?.toString(),
-        email: json['email']?.toString(),
-        fullName: json['full_name']?.toString(),
-        isAdmin: isAdmin,
-      );
+  factory Profile.fromJson(
+    Map<String, dynamic> json, {
+    required bool isAdmin,
+  }) => Profile(
+    id: json['id']?.toString() ?? '',
+    matrixId: json['matrix_id']?.toString(),
+    email: json['email']?.toString(),
+    fullName: json['full_name']?.toString(),
+    isAdmin: isAdmin,
+  );
 
   final String id;
   final String? matrixId;
@@ -211,13 +222,13 @@ class Purchase {
   });
 
   factory Purchase.fromJson(Map<String, dynamic> json) => Purchase(
-        id: json['id']?.toString() ?? '',
-        courseId: json['course_id']?.toString(),
-        moduleId: json['module_id']?.toString(),
-        amountInr: (json['amount_inr'] as num?)?.toInt() ?? 0,
-        status: json['status']?.toString() ?? '',
-        createdAt: json['created_at']?.toString(),
-      );
+    id: json['id']?.toString() ?? '',
+    courseId: json['course_id']?.toString(),
+    moduleId: json['module_id']?.toString(),
+    amountInr: (json['amount_inr'] as num?)?.toInt() ?? 0,
+    status: json['status']?.toString() ?? '',
+    createdAt: json['created_at']?.toString(),
+  );
 
   final String id;
   final String? courseId;
@@ -250,6 +261,9 @@ class CourseDraft {
     required this.priceInr,
     required this.isPublished,
     this.coverImageUrl,
+    this.program,
+    this.branch,
+    this.semester,
   });
 
   final String? id;
@@ -261,17 +275,23 @@ class CourseDraft {
   final int priceInr;
   final bool isPublished;
   final String? coverImageUrl;
+  final String? program;
+  final String? branch;
+  final String? semester;
 
   Map<String, dynamic> toJson() => {
-        'slug': slug,
-        'title': title,
-        'subtitle': subtitle,
-        'description': description,
-        'category': category,
-        'price_inr': priceInr,
-        'is_published': isPublished,
-        if (coverImageUrl != null) 'cover_image_url': coverImageUrl,
-      };
+    'slug': slug,
+    'title': title,
+    'subtitle': subtitle,
+    'description': description,
+    'category': category,
+    'price_inr': priceInr,
+    'is_published': isPublished,
+    if (coverImageUrl != null) 'cover_image_url': coverImageUrl,
+    'program': (program ?? '').trim().isEmpty ? null : program!.trim(),
+    'branch': (branch ?? '').trim().isEmpty ? null : branch!.trim(),
+    'semester': (semester ?? '').trim().isEmpty ? null : semester!.trim(),
+  };
 }
 
 class ModuleDraft {
@@ -296,15 +316,15 @@ class ModuleDraft {
   final bool isFreeForMembers;
 
   Map<String, dynamic> toJson() => {
-        'course_id': courseId,
-        'title': title,
-        'description': description,
-        'display_order': order,
-        'price_inr': priceInr,
-        'is_free_preview': isFreePreview,
-        'is_free_for_members': isFreeForMembers,
-        'module_type': 'text',
-      };
+    'course_id': courseId,
+    'title': title,
+    'description': description,
+    'display_order': order,
+    'price_inr': priceInr,
+    'is_free_preview': isFreePreview,
+    'is_free_for_members': isFreeForMembers,
+    'module_type': 'text',
+  };
 }
 
 String formatInr(int value) {
