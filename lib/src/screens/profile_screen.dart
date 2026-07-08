@@ -4,6 +4,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/models.dart';
 import '../app.dart'; // For MatrixScope
 import '../widgets/shared_widgets.dart';
+import '../api.dart';
+import '../ai/gemini_embedding_api.dart';
 
 import "admin_screen.dart";
 // ─── Profile Screen ───────────────────────────────────────────────────────────
@@ -99,6 +101,55 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     },
                     icon: const Icon(Icons.logout),
                     label: const Text('Sign out'),
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton(
+                    onPressed: () async {
+                      final matrixApi = scope.api;
+                      const testCourseId = '456dc0bd-1933-475b-b7e0-8fc22dc81477';
+
+                      final modules = await matrixApi.listModulesByCourseId(testCourseId);
+                      debugPrint('[AI-DEBUG] Modules: ${modules.length}');
+
+                      final rows = await matrixApi.callMatchAiCache(
+                        courseId: testCourseId,
+                        embedding: List.filled(768, 0.1),
+                        threshold: 0.5,
+                      );
+                      debugPrint('[AI-DEBUG] Match rows (expect 0): ${rows.length}');
+
+                      await matrixApi.insertAiCache({
+                        'course_id': 'test',
+                        'question': 'debug question',
+                        'answer': 'debug answer',
+                        'embedding': List.filled(768, 0.1),
+                      });
+                      debugPrint('[AI-DEBUG] Insert done — check Supabase ai_qa_cache table');
+                    },
+                    child: const Text('[DEBUG] Test Module 5'),
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton(
+                    onPressed: () async {
+                      final matrixApi = scope.api;
+                      await matrixApi.patchAiCacheHitCount('1baa91bd-83a7-4b45-a2e3-5fde8c98b6e5');
+                      debugPrint('[AI-DEBUG] Patch done — check hit_count in Supabase, expect 2');
+                    },
+                    child: const Text('[DEBUG] Test hit count patch'),
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton(
+                    onPressed: () async {
+                      try {
+                        final api = GeminiEmbeddingApi();
+                        final vec = await api.embed('What is integration?');
+                        debugPrint('[AI-DEBUG] Vector length: ${vec.length}');
+                        debugPrint('[AI-DEBUG] First 5: ${vec.take(5).toList()}');
+                      } catch (e) {
+                        debugPrint('[AI-DEBUG] Error: $e');
+                      }
+                    },
+                    child: const Text('[DEBUG] Test Embedding'),
                   ),
                 ],
               ),

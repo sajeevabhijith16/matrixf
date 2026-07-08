@@ -278,6 +278,62 @@ class MatrixApi {
     return rows.map<Purchase>((row) => Purchase.fromJson(row)).toList();
   }
 
+  // ─── AI Chat Cache ───────────────────────────────────────────────────────
+
+  /// Returns all modules for a course ordered by display_order.
+  /// Used by the AI to build course context for Gemini. Public, no auth.
+  Future<List<TextModule>> listModulesByCourseId(String courseId) async {
+    final rows = await _restGet('modules', {
+      'select':
+          'id,course_id,title,description,display_order,price_inr,page_count,is_free_preview,is_free_for_members,module_type,latest_text_version',
+      'course_id': 'eq.$courseId',
+      'order': 'display_order.asc',
+    });
+    return rows.map<TextModule>((r) => TextModule.fromJson(r)).toList();
+  }
+
+  /// Calls the match_ai_cache RPC for vector similarity search.
+  /// Returns rows sorted by similarity descending. Public, no auth.
+  Future<List<Map<String, dynamic>>> callMatchAiCache({
+    required String courseId,
+    required List<double> embedding,
+    required double threshold,
+    int count = 3,
+  }) async {
+    final result = await _rpcPost('match_ai_cache', {
+      'p_course_id': courseId,
+      'p_embedding': embedding,
+      'p_threshold': threshold,
+      'p_count': count,
+    });
+    if (result == null) return [];
+    return (result as List).cast<Map<String, dynamic>>();
+  }
+
+  /// Inserts a new Q&A entry into the ai_qa_cache table. Public, no auth.
+  Future<void> insertAiCache(Map<String, dynamic> row) async {
+    await _restPost('ai_qa_cache', row);
+  }
+
+  /// Increments the hit_count of a cache entry by 1. Public, no auth.
+  Future<void> patchAiCacheHitCount(String id) async {
+    // PostgREST does not support raw SQL expressions in PATCH body.
+    // Workaround: fetch current count, then patch with count + 1.
+    final rows = await _restGet('ai_qa_cache', {
+      'select': 'hit_count',
+      'id': 'eq.$id',
+      'limit': '1',
+    });
+    if (rows.isEmpty) return;
+    final current = (rows.first as Map<String, dynamic>)['hit_count'];
+    final currentCount = (current as num?)?.toInt() ?? 0;
+    await _restPatch(
+      'ai_qa_cache',
+      {'id': 'eq.$id'},
+      {'hit_count': currentCount + 1},
+    );
+  }
+
   // ─── Admin: courses ─────────────────────────────────────────────────────────
 
   Future<List<Course>> adminListCourses() async {
@@ -321,7 +377,8 @@ class MatrixApi {
   // Public: only active banners, in display order. No auth required.
   Future<List<AppBanner>> listBanners() async {
     final rows = await _restGet('banners', {
-      'select': 'id,image_url,is_active,display_order,redirect_course_slug,created_at',
+      'select':
+          'id,image_url,is_active,display_order,redirect_course_slug,created_at',
       'is_active': 'eq.true',
       'order': 'display_order.asc',
     });
@@ -332,7 +389,8 @@ class MatrixApi {
   Future<List<AppBanner>> adminListBanners() async {
     _requireSession();
     final rows = await _restGet('banners', {
-      'select': 'id,image_url,is_active,display_order,redirect_course_slug,created_at',
+      'select':
+          'id,image_url,is_active,display_order,redirect_course_slug,created_at',
       'order': 'display_order.asc',
     });
     return rows.map<AppBanner>((row) => AppBanner.fromJson(row)).toList();
@@ -674,6 +732,16 @@ class MatrixApi {
     request.headers.set('Prefer', 'return=minimal');
     request.write(jsonEncode(body));
     await _readResponse(await request.close());
+  }
+
+  Future<dynamic> _rpcPost(String fn, Map<String, dynamic> body) async {
+    final request = await _client.postUrl(
+      Uri.parse('$supabaseUrl/rest/v1/rpc/$fn'),
+    );
+    _setRestHeaders(request);
+    request.headers.contentType = ContentType.json;
+    request.write(jsonEncode(body));
+    return _readResponse(await request.close());
   }
 
   void _setRestHeaders(HttpClientRequest request) {
