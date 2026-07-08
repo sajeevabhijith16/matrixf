@@ -6,6 +6,10 @@ import '../app.dart'; // For MatrixScope
 import '../widgets/shared_widgets.dart';
 import '../api.dart';
 import '../ai/gemini_embedding_api.dart';
+import '../ai/gemini_chat_api.dart';
+import '../ai/ai_models.dart';
+import 'dart:convert';
+import 'dart:io';
 
 import "admin_screen.dart";
 // ─── Profile Screen ───────────────────────────────────────────────────────────
@@ -42,7 +46,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         children: [
           const BrandHeader(),
           const SizedBox(height: 24),
-          Text('Your account', style: Theme.of(context).textTheme.headlineMedium),
+          Text(
+            'Your account',
+            style: Theme.of(context).textTheme.headlineMedium,
+          ),
           const SizedBox(height: 16),
           Card(
             child: Padding(
@@ -57,9 +64,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       Expanded(
                         child: SelectableText(
                           profile.matrixId ?? '...',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleLarge
+                          style: Theme.of(context).textTheme.titleLarge
                               ?.copyWith(fontFamily: 'monospace'),
                         ),
                       ),
@@ -68,7 +73,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         tooltip: 'Copy Matrix ID',
                         onPressed: () {
                           if (profile.matrixId != null) {
-                            Clipboard.setData(ClipboardData(text: profile.matrixId!));
+                            Clipboard.setData(
+                              ClipboardData(text: profile.matrixId!),
+                            );
                             showSnack(context, 'Matrix ID copied');
                           }
                         },
@@ -84,9 +91,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     FilledButton.icon(
                       onPressed: () => Navigator.of(context).push(
                         MaterialPageRoute(
-                          builder: (_) => const Scaffold(
-                            body: AdminScreen(),
-                          ),
+                          builder: (_) => const Scaffold(body: AdminScreen()),
                         ),
                       ),
                       icon: const Icon(Icons.shield_outlined),
@@ -106,9 +111,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ElevatedButton(
                     onPressed: () async {
                       final matrixApi = scope.api;
-                      const testCourseId = '456dc0bd-1933-475b-b7e0-8fc22dc81477';
+                      const testCourseId =
+                          '456dc0bd-1933-475b-b7e0-8fc22dc81477';
 
-                      final modules = await matrixApi.listModulesByCourseId(testCourseId);
+                      final modules = await matrixApi.listModulesByCourseId(
+                        testCourseId,
+                      );
                       debugPrint('[AI-DEBUG] Modules: ${modules.length}');
 
                       final rows = await matrixApi.callMatchAiCache(
@@ -116,7 +124,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         embedding: List.filled(768, 0.1),
                         threshold: 0.5,
                       );
-                      debugPrint('[AI-DEBUG] Match rows (expect 0): ${rows.length}');
+                      debugPrint(
+                        '[AI-DEBUG] Match rows (expect 0): ${rows.length}',
+                      );
 
                       await matrixApi.insertAiCache({
                         'course_id': 'test',
@@ -124,7 +134,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         'answer': 'debug answer',
                         'embedding': List.filled(768, 0.1),
                       });
-                      debugPrint('[AI-DEBUG] Insert done — check Supabase ai_qa_cache table');
+                      debugPrint(
+                        '[AI-DEBUG] Insert done — check Supabase ai_qa_cache table',
+                      );
                     },
                     child: const Text('[DEBUG] Test Module 5'),
                   ),
@@ -132,8 +144,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ElevatedButton(
                     onPressed: () async {
                       final matrixApi = scope.api;
-                      await matrixApi.patchAiCacheHitCount('1baa91bd-83a7-4b45-a2e3-5fde8c98b6e5');
-                      debugPrint('[AI-DEBUG] Patch done — check hit_count in Supabase, expect 2');
+                      await matrixApi.patchAiCacheHitCount(
+                        '1baa91bd-83a7-4b45-a2e3-5fde8c98b6e5',
+                      );
+                      debugPrint(
+                        '[AI-DEBUG] Patch done — check hit_count in Supabase, expect 2',
+                      );
                     },
                     child: const Text('[DEBUG] Test hit count patch'),
                   ),
@@ -144,12 +160,45 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         final api = GeminiEmbeddingApi();
                         final vec = await api.embed('What is integration?');
                         debugPrint('[AI-DEBUG] Vector length: ${vec.length}');
-                        debugPrint('[AI-DEBUG] First 5: ${vec.take(5).toList()}');
+                        debugPrint(
+                          '[AI-DEBUG] First 5: ${vec.take(5).toList()}',
+                        );
                       } catch (e) {
                         debugPrint('[AI-DEBUG] Error: $e');
                       }
                     },
                     child: const Text('[DEBUG] Test Embedding'),
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton(
+                    onPressed: () async {
+                      try {
+                        final api = GeminiChatApi();
+                        final reply = await api.sendMessage(
+                          courseTitle: 'Mathematics',
+                          courseContext:
+                              'Chapter 1: Integration is the area under a curve...',
+                          history: [
+                            ChatMessage(
+                              role: ChatRole.user,
+                              content: 'What is integration?',
+                              timestamp: DateTime.now(),
+                            ),
+                            ChatMessage(
+                              role: ChatRole.assistant,
+                              content:
+                                  'Integration is the process of finding the area under a curve.',
+                              timestamp: DateTime.now(),
+                            ),
+                          ],
+                          question: 'can you give me a sample example?',
+                        );
+                        debugPrint('[AI-DEBUG] Reply: $reply');
+                      } catch (e) {
+                        debugPrint('[AI-DEBUG] Error: $e');
+                      }
+                    },
+                    child: const Text('[DEBUG] Test Chat'),
                   ),
                 ],
               ),
@@ -164,17 +213,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Purchase history', style: Theme.of(context).textTheme.titleLarge),
+                  Text(
+                    'Purchase history',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
                   const SizedBox(height: 8),
                   if (purchases.isEmpty)
                     const EmptyBox('No purchases yet.')
                   else
-                    ...purchases.map((p) => Card(
-                          child: ListTile(
-                            title: Text(formatInr(p.amountInr)),
-                            subtitle: Text('${p.status}  ${p.createdAt ?? ''}'),
-                          ),
-                        )),
+                    ...purchases.map(
+                      (p) => Card(
+                        child: ListTile(
+                          title: Text(formatInr(p.amountInr)),
+                          subtitle: Text('${p.status}  ${p.createdAt ?? ''}'),
+                        ),
+                      ),
+                    ),
                 ],
               );
             },
@@ -195,7 +249,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
         const SizedBox(height: 16),
         if (signUp) ...[
-          TextField(controller: name, decoration: const InputDecoration(labelText: 'Full name')),
+          TextField(
+            controller: name,
+            decoration: const InputDecoration(labelText: 'Full name'),
+          ),
           const SizedBox(height: 12),
         ],
         TextField(
@@ -212,7 +269,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
         const SizedBox(height: 16),
         FilledButton(
           onPressed: loading ? null : () => _submitAuth(context),
-          child: Text(loading ? 'Please wait...' : signUp ? 'Create account' : 'Sign in'),
+          child: Text(
+            loading
+                ? 'Please wait...'
+                : signUp
+                ? 'Create account'
+                : 'Sign in',
+          ),
         ),
         const SizedBox(height: 10),
         // ─── Google OAuth button ────────────────────────────────────────────
@@ -223,7 +286,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
         TextButton(
           onPressed: () => setState(() => signUp = !signUp),
-          child: Text(signUp ? 'Already have an account? Sign in' : 'New here? Create account'),
+          child: Text(
+            signUp
+                ? 'Already have an account? Sign in'
+                : 'New here? Create account',
+          ),
         ),
       ],
     );
@@ -234,7 +301,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() => loading = true);
     try {
       if (signUp) {
-        await scope.api.signUp(name.text.trim(), email.text.trim(), password.text);
+        await scope.api.signUp(
+          name.text.trim(),
+          email.text.trim(),
+          password.text,
+        );
         if (context.mounted) {
           showSnack(context, 'Check your email to confirm your account.');
           setState(() => signUp = false);
@@ -255,12 +326,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final oauthUrl = scope.api.getGoogleOAuthUrl('matrixf://auth/callback');
     final uri = Uri.parse(oauthUrl);
     try {
-      final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      final launched = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
       if (!launched && context.mounted) {
         showSnack(context, 'Could not open browser. Please try again.');
       }
     } catch (e) {
-      if (context.mounted) showSnack(context, 'Could not open browser for Google sign-in.');
+      if (context.mounted)
+        showSnack(context, 'Could not open browser for Google sign-in.');
     }
   }
 }
