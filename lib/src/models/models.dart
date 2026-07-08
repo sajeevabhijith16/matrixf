@@ -339,3 +339,78 @@ String formatInr(int value) {
   }
   return 'Rs ${buffer.toString()}';
 }
+
+// Banner stores redirect target as a course SLUG (not id) so tapping a
+// banner can call your existing openCourse(context, slug) helper directly,
+// with no extra lookup needed at tap time.
+
+class AppBanner {
+  final String id;
+  final String imageUrl;
+  final bool isActive;
+  final int displayOrder;
+  final String? redirectCourseSlug; // null => decorative, no tap action
+  final DateTime createdAt;
+
+  const AppBanner({
+    required this.id,
+    required this.imageUrl,
+    required this.isActive,
+    required this.displayOrder,
+    this.redirectCourseSlug,
+    required this.createdAt,
+  });
+
+  factory AppBanner.fromJson(Map<String, dynamic> json) {
+    return AppBanner(
+      id: json['id'] as String,
+      imageUrl: json['image_url'] as String,
+      isActive: json['is_active'] as bool? ?? true,
+      displayOrder: json['display_order'] as int? ?? 0,
+      redirectCourseSlug: json['redirect_course_slug'] as String?,
+      createdAt: DateTime.parse(json['created_at'] as String),
+    );
+  }
+}
+
+class BannerDraft {
+  String? id;
+  String imageUrl;
+  bool isActive;
+  int displayOrder;
+  bool redirectEnabled;
+  String? redirectCourseSlug;
+  String?
+  redirectCourseTitle; // UI-only, not persisted — label for the picker button
+
+  BannerDraft({
+    this.id,
+    this.imageUrl = '',
+    this.isActive = true,
+    this.displayOrder = 0,
+    this.redirectEnabled = false,
+    this.redirectCourseSlug,
+    this.redirectCourseTitle,
+  });
+
+  BannerDraft.fromBanner(AppBanner b)
+    : id = b.id,
+      imageUrl = b.imageUrl,
+      isActive = b.isActive,
+      displayOrder = b.displayOrder,
+      redirectEnabled = b.redirectCourseSlug != null,
+      redirectCourseSlug = b.redirectCourseSlug,
+      redirectCourseTitle = null;
+
+  bool get isValid =>
+      imageUrl.trim().isNotEmpty &&
+      (!redirectEnabled || redirectCourseSlug != null);
+
+  Map<String, dynamic> toJson() => {
+    if (id != null) 'id': id,
+    'image_url': imageUrl.trim(),
+    'is_active': isActive,
+    'display_order': displayOrder,
+    'redirect_course_slug': redirectEnabled ? redirectCourseSlug : null,
+  };
+}

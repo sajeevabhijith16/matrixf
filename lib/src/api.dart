@@ -318,6 +318,40 @@ class MatrixApi {
     await _restDelete('modules', {'id': 'eq.$id'});
   }
 
+  // Public: only active banners, in display order. No auth required.
+  Future<List<AppBanner>> listBanners() async {
+    final rows = await _restGet('banners', {
+      'select': 'id,image_url,is_active,display_order,redirect_course_slug,created_at',
+      'is_active': 'eq.true',
+      'order': 'display_order.asc',
+    });
+    return rows.map<AppBanner>((row) => AppBanner.fromJson(row)).toList();
+  }
+
+  // Admin: every banner, active or hidden.
+  Future<List<AppBanner>> adminListBanners() async {
+    _requireSession();
+    final rows = await _restGet('banners', {
+      'select': 'id,image_url,is_active,display_order,redirect_course_slug,created_at',
+      'order': 'display_order.asc',
+    });
+    return rows.map<AppBanner>((row) => AppBanner.fromJson(row)).toList();
+  }
+
+  Future<void> adminSaveBanner(BannerDraft draft) async {
+    _requireSession();
+    if (draft.id == null) {
+      await _restPost('banners', draft.toJson());
+    } else {
+      await _restPatch('banners', {'id': 'eq.${draft.id}'}, draft.toJson());
+    }
+  }
+
+  Future<void> adminDeleteBanner(String id) async {
+    _requireSession();
+    await _restDelete('banners', {'id': 'eq.$id'});
+  }
+
   // ─── Admin: module text versions ────────────────────────────────────────────
 
   Future<List<ModuleTextVersion>> adminListModuleTextVersions(

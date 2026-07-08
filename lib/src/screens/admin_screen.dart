@@ -5,6 +5,7 @@ import '../app.dart'; // For MatrixScope
 import '../widgets/shared_widgets.dart';
 import '../components/module_text_renderer.dart';
 import '../screens/upload_img_screen.dart';
+import 'banners_admin_screen.dart';
 
 // ─── Admin Screen ─────────────────────────────────────────────────────────────
 
@@ -48,6 +49,15 @@ class _AdminScreenState extends State<AdminScreen> {
             const Expanded(child: BrandHeader()),
 
             IconButton(
+              icon: const Icon(Icons.view_carousel_outlined),
+              tooltip: 'Banners',
+              onPressed: () {
+                Navigator.of(
+                  context,
+                ).push(MaterialPageRoute(builder: (_) => const BannersAdminScreen()));
+              },
+            ),
+            IconButton(
               icon: const Icon(Icons.upload_file),
               tooltip: 'Upload',
               onPressed: () {
@@ -70,6 +80,16 @@ class _AdminScreenState extends State<AdminScreen> {
           onPressed: () => showCourseEditor(context, null, onSaved: _reload),
           icon: const Icon(Icons.add),
           label: const Text('New course'),
+        ),
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          onPressed: () {
+            Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const BannersAdminScreen()));
+          },
+          icon: const Icon(Icons.view_carousel_outlined),
+          label: const Text('Manage banners'),
         ),
         const SizedBox(height: 12),
         FutureBuilder<List<Course>>(
