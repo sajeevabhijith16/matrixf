@@ -4,12 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/models.dart';
 import '../app.dart'; // For MatrixScope
 import '../widgets/shared_widgets.dart';
-import '../api.dart';
 import '../ai/gemini_embedding_api.dart';
-import '../ai/gemini_chat_api.dart';
-import '../ai/ai_models.dart';
-import 'dart:convert';
-import 'dart:io';
 
 import "admin_screen.dart";
 // ─── Profile Screen ───────────────────────────────────────────────────────────
@@ -107,98 +102,43 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     icon: const Icon(Icons.logout),
                     label: const Text('Sign out'),
                   ),
+
                   const SizedBox(height: 12),
                   ElevatedButton(
                     onPressed: () async {
-                      final matrixApi = scope.api;
                       const testCourseId =
                           '456dc0bd-1933-475b-b7e0-8fc22dc81477';
-
-                      final modules = await matrixApi.listModulesByCourseId(
-                        testCourseId,
-                      );
-                      debugPrint('[AI-DEBUG] Modules: ${modules.length}');
-
-                      final rows = await matrixApi.callMatchAiCache(
-                        courseId: testCourseId,
-                        embedding: List.filled(768, 0.1),
-                        threshold: 0.5,
-                      );
-                      debugPrint(
-                        '[AI-DEBUG] Match rows (expect 0): ${rows.length}',
-                      );
-
-                      await matrixApi.insertAiCache({
-                        'course_id': 'test',
-                        'question': 'debug question',
-                        'answer': 'debug answer',
-                        'embedding': List.filled(768, 0.1),
-                      });
-                      debugPrint(
-                        '[AI-DEBUG] Insert done — check Supabase ai_qa_cache table',
-                      );
-                    },
-                    child: const Text('[DEBUG] Test Module 5'),
-                  ),
-                  const SizedBox(height: 12),
-                  ElevatedButton(
-                    onPressed: () async {
+                      final embeddingApi = GeminiEmbeddingApi();
                       final matrixApi = scope.api;
-                      await matrixApi.patchAiCacheHitCount(
-                        '1baa91bd-83a7-4b45-a2e3-5fde8c98b6e5',
-                      );
-                      debugPrint(
-                        '[AI-DEBUG] Patch done — check hit_count in Supabase, expect 2',
-                      );
-                    },
-                    child: const Text('[DEBUG] Test hit count patch'),
-                  ),
-                  const SizedBox(height: 12),
-                  ElevatedButton(
-                    onPressed: () async {
+
                       try {
-                        final api = GeminiEmbeddingApi();
-                        final vec = await api.embed('What is integration?');
-                        debugPrint('[AI-DEBUG] Vector length: ${vec.length}');
-                        debugPrint(
-                          '[AI-DEBUG] First 5: ${vec.take(5).toList()}',
-                        );
+                        final questions = [
+                          'What is integration?', // same as cached question
+                          'Explain integration to me', // rephrased, should be "similar"
+                          'Give me integration examples', // related but different angle
+                          'What is photosynthesis?', // unrelated
+                          'What is the capital of France?', // totally unrelated
+                        ];
+
+                        for (final q in questions) {
+                          final embedding = await embeddingApi.embed(q);
+                          final rows = await matrixApi.callMatchAiCache(
+                            courseId: testCourseId,
+                            embedding: embedding,
+                            threshold:
+                                0.0, // no filtering — show the real number
+                            count: 1,
+                          );
+                          final sim = rows.isEmpty
+                              ? null
+                              : rows.first['similarity'];
+                          debugPrint('[AI-DEBUG] "$q" → similarity: $sim');
+                        }
                       } catch (e) {
                         debugPrint('[AI-DEBUG] Error: $e');
                       }
                     },
-                    child: const Text('[DEBUG] Test Embedding'),
-                  ),
-                  const SizedBox(height: 12),
-                  ElevatedButton(
-                    onPressed: () async {
-                      try {
-                        final api = GeminiChatApi();
-                        final reply = await api.sendMessage(
-                          courseTitle: 'Mathematics',
-                          courseContext:
-                              'Chapter 1: Integration is the area under a curve...',
-                          history: [
-                            ChatMessage(
-                              role: ChatRole.user,
-                              content: 'What is integration?',
-                              timestamp: DateTime.now(),
-                            ),
-                            ChatMessage(
-                              role: ChatRole.assistant,
-                              content:
-                                  'Integration is the process of finding the area under a curve.',
-                              timestamp: DateTime.now(),
-                            ),
-                          ],
-                          question: 'can you give me a sample example?',
-                        );
-                        debugPrint('[AI-DEBUG] Reply: $reply');
-                      } catch (e) {
-                        debugPrint('[AI-DEBUG] Error: $e');
-                      }
-                    },
-                    child: const Text('[DEBUG] Test Chat'),
+                    child: const Text('[DEBUG] Calibrate thresholds'),
                   ),
                 ],
               ),
@@ -334,8 +274,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         showSnack(context, 'Could not open browser. Please try again.');
       }
     } catch (e) {
-      if (context.mounted)
+      if (context.mounted) {
         showSnack(context, 'Could not open browser for Google sign-in.');
+      }
     }
   }
 }

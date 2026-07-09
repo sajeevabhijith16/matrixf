@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
+import 'ai/ai_models.dart';
 import 'api.dart';
 import 'models/models.dart';
 import 'screens/home_screen.dart';
@@ -8,6 +9,7 @@ import 'screens/catalog_screen.dart';
 import 'screens/library_screen.dart';
 import 'screens/support_screen.dart';
 import 'screens/profile_screen.dart';
+import 'widgets/ai_chat_overlay.dart';
 
 // ─── App Shell ───────────────────────────────────────────────────────────────
 
@@ -95,6 +97,19 @@ class _MatrixAppState extends State<MatrixApp> {
 
   void setTab(int value) => setState(() => tab = value);
 
+  AiCourse? pendingAiCourse;
+
+  void requestAiSignIn(AiCourse course) {
+    setState(() {
+      pendingAiCourse = course;
+      tab = 4; // Profile tab
+    });
+  }
+
+  void clearPendingAiCourse() {
+    setState(() => pendingAiCourse = null);
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_initialized) {
@@ -112,6 +127,9 @@ class _MatrixAppState extends State<MatrixApp> {
       profile: profile,
       refreshProfile: refreshProfile,
       setTab: setTab,
+      pendingAiCourse: pendingAiCourse,
+      requestAiSignIn: requestAiSignIn,
+      clearPendingAiCourse: clearPendingAiCourse,
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'Matrix',
@@ -159,13 +177,22 @@ class MatrixScope extends InheritedWidget {
     required this.profile,
     required this.refreshProfile,
     required this.setTab,
+    required this.pendingAiCourse,
+    required this.requestAiSignIn,
+    required this.clearPendingAiCourse,
     required super.child,
   });
-
   final MatrixApi api;
   final Profile? profile;
   final Future<void> Function() refreshProfile;
   final void Function(int tab) setTab;
+
+  // AI Tutor sign-in gating: when a guest picks a course, we stash it here,
+  // switch to the Profile tab, and MatrixShell reopens the chat sheet with
+  // this course once sign-in succeeds.
+  final AiCourse? pendingAiCourse;
+  final void Function(AiCourse course) requestAiSignIn;
+  final VoidCallback clearPendingAiCourse;
 
   static MatrixScope of(BuildContext context) {
     final scope = context.dependOnInheritedWidgetOfExactType<MatrixScope>();
@@ -178,7 +205,7 @@ class MatrixScope extends InheritedWidget {
       profile != oldWidget.profile || api.session != oldWidget.api.session;
 }
 
-class MatrixShell extends StatelessWidget {
+class MatrixShell extends StatefulWidget {
   const MatrixShell({
     super.key,
     required this.tab,
@@ -189,6 +216,29 @@ class MatrixShell extends StatelessWidget {
   final int tab;
   final ValueChanged<int> onTabChanged;
   final Profile? profile;
+
+  @override
+  State<MatrixShell> createState() => _MatrixShellState();
+}
+
+class _MatrixShellState extends State<MatrixShell> {
+  @override
+  void didUpdateWidget(covariant MatrixShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final justSignedIn = oldWidget.profile == null && widget.profile != null;
+    if (justSignedIn) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _maybeReopenAiChat());
+    }
+  }
+
+  void _maybeReopenAiChat() {
+    if (!mounted) return;
+    final scope = MatrixScope.of(context);
+    final course = scope.pendingAiCourse;
+    if (course == null) return;
+    scope.clearPendingAiCourse();
+    openAiChatSheet(context, initialCourse: course);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -206,12 +256,14 @@ class MatrixShell extends StatelessWidget {
       const NavigationDestination(icon: Icon(Icons.support_agent), label: 'Support'),
       const NavigationDestination(icon: Icon(Icons.person_outline), label: 'Profile'),
     ];
-    final safeTab = tab >= pages.length ? 0 : tab;
+    final safeTab = widget.tab >= pages.length ? 0 : widget.tab;
     return Scaffold(
-      body: pages[safeTab],
+      body: AiChatOverlay(
+        child: pages[safeTab],
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: safeTab,
-        onDestinationSelected: onTabChanged,
+        onDestinationSelected: widget.onTabChanged,
         destinations: items,
       ),
     );

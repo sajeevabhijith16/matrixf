@@ -63,13 +63,3 @@ class CacheSimilar extends CacheResult {
 
 class CacheMiss extends CacheResult {}
 
-void testSealed(CacheResult r) {
-  switch (r) {
-    case CacheHit(:final entry):
-      print(entry.answer);
-    case CacheSimilar(:final best):
-      print(best.question);
-    case CacheMiss():
-      print('miss');
-  }
-}
