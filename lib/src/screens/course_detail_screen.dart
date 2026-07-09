@@ -44,8 +44,9 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-          if (snapshot.hasError)
+          if (snapshot.hasError) {
             return CenteredError(snapshot.error.toString());
+          }
           final detail = snapshot.data;
           if (detail == null) return const CenteredError('Course not found.');
 

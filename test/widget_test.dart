@@ -11,6 +11,9 @@ void main() {
         profile: null,
         refreshProfile: () async {},
         setTab: (_) {},
+        pendingAiCourse: null,
+        requestAiSignIn: (_) {},
+        clearPendingAiCourse: () {},
         child: const MaterialApp(
           home: MatrixShell(tab: 3, onTabChanged: _noop, profile: null),
         ),

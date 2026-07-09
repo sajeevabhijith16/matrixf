@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 const _geminiApiKey = String.fromEnvironment(
   'GEMINI_API_KEY',
   defaultValue: '',
@@ -55,6 +57,14 @@ class GeminiEmbeddingApi {
 
     final ok = response.statusCode >= 200 && response.statusCode < 300;
     if (!ok) {
+      if (response.statusCode == 429) {
+        debugPrint(
+          '[GeminiEmbeddingApi] ⚠️  QUOTA EXCEEDED (429) — '
+          'Gemini API rate limit hit. '
+          'Wait a minute or check your quota at https://aistudio.google.com. '
+          'Raw body: $body',
+        );
+      }
       throw GeminiEmbeddingApiException(
         'Embedding failed: ${response.statusCode} — $body',
       );

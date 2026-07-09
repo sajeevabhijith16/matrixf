@@ -7,9 +7,9 @@ import 'package:matrixf/src/models/models.dart';
 
 void main() {
   testWidgets('Test Admin Screen Push', (WidgetTester tester) async {
-    FlutterError.onError = (FlutterErrorDetails details) {
-      print('FLUTTER_ERROR: ${details.exceptionAsString()}');
-      print('STACK: ${details.stack}');
+      FlutterError.onError = (FlutterErrorDetails details) {
+        debugPrint('FLUTTER_ERROR: ${details.exceptionAsString()}');
+        debugPrint('STACK: ${details.stack}');
     };
 
     try {
@@ -22,6 +22,9 @@ void main() {
         profile: profile,
         refreshProfile: () async {},
         setTab: (t) {},
+        pendingAiCourse: null,
+        requestAiSignIn: (_) {},
+        clearPendingAiCourse: () {},
         child: MaterialApp(
           home: Builder(
             builder: (context) {
@@ -49,7 +52,7 @@ void main() {
       await tester.tap(find.text('Open admin console'));
       await tester.pumpAndSettle();
     } catch (e) {
-      print('PUMP_ERROR: $e');
+      debugPrint('PUMP_ERROR: $e');
     }
   });
 }

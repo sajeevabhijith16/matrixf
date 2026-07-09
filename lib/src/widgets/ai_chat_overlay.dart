@@ -147,6 +147,10 @@ class _AiChatSheetState extends State<_AiChatSheet> {
   CacheEntry? _pendingSimilar;
   String _courseContext = '';
 
+  // Course picker state
+  List<AiCourse> _courses = [];
+  bool _loadingCourses = false;
+
   bool _servicesInitialized = false;
   late final GeminiEmbeddingApi _embeddingApi;
   late final GeminiChatApi _chatApi;
@@ -186,6 +190,26 @@ class _AiChatSheetState extends State<_AiChatSheet> {
       if (widget.initialCourse != null && _courseContext.isEmpty) {
         _loadCourseContext(widget.initialCourse!);
       }
+      if (_phase == _ChatPhase.courseSelect) {
+        _loadCourses();
+      }
+    }
+  }
+
+  Future<void> _loadCourses() async {
+    setState(() => _loadingCourses = true);
+    try {
+      final rawCourses = await MatrixScope.of(context).api.listCourses();
+      if (!mounted) return;
+      setState(() {
+        _courses = rawCourses
+            .map((c) => AiCourse(id: c.id, title: c.title, slug: c.slug))
+            .toList();
+      });
+    } catch (e) {
+      debugPrint('[AiChatSheet] Failed to load courses: $e');
+    } finally {
+      if (mounted) setState(() => _loadingCourses = false);
     }
   }
 
@@ -307,13 +331,46 @@ class _AiChatSheetState extends State<_AiChatSheet> {
   }
 
   Widget _buildCoursePickerPhase(BuildContext context) {
+    if (_loadingCourses) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: Color(0xFF18664B)),
+            SizedBox(height: 16),
+            Text('Loading courses...', style: TextStyle(color: Colors.grey)),
+          ],
+        ),
+      );
+    }
+    if (_courses.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.school_outlined, size: 48, color: Colors.grey),
+              SizedBox(height: 12),
+              Text(
+                'No courses available',
+                style: TextStyle(fontSize: 16, color: Colors.grey),
+              ),
+              SizedBox(height: 4),
+              Text(
+                'Check your connection and try again.',
+                style: TextStyle(fontSize: 13, color: Colors.grey),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.all(16),
       child: CoursePicker(
-        courses: const [
-          AiCourse(id: '1', title: 'Mathematics', slug: 'mathematics'),
-          AiCourse(id: '2', title: 'Physics', slug: 'physics'),
-        ],
+        courses: _courses,
         onSelected: _onCourseSelected,
       ),
     );
@@ -434,8 +491,82 @@ class _AiChatSheetState extends State<_AiChatSheet> {
     _onSend(_lastFailedQuestion);
   }
 
-  void _onConfirmYes() {}
-  void _onConfirmNo() {}
+  void _onConfirmYes() {
+    if (_pendingSimilar == null) return;
+    final answer = _pendingSimilar!.answer;
+    final id = _pendingSimilar!.id;
+    setState(() {
+      _messages.removeLast(); // remove isConfirm bubble
+      _messages.add(ChatMessage(
+        role: ChatRole.assistant,
+        content: answer,
+        timestamp: DateTime.now(),
+      ));
+      _phase = _ChatPhase.chatting;
+      _pendingSimilar = null;
+      _pendingQuestion = '';
+    });
+    _cacheService.incrementHit(id);
+    _scrollToBottom();
+  }
+
+  Future<void> _onConfirmNo() async {
+    if (_pendingSimilar == null) return;
+    final question = _pendingQuestion;
+    setState(() {
+      _messages.removeLast(); // remove isConfirm bubble
+      _phase = _ChatPhase.chatting;
+      _pendingSimilar = null;
+      _pendingQuestion = '';
+    });
+    // Skip cache entirely — user said this is NOT the cached question,
+    // so go straight to Gemini and save a new entry.
+    await _sendDirect(question);
+  }
+
+  /// Sends [question] directly to Gemini, bypassing the cache lookup.
+  /// Used by _onConfirmNo to avoid re-triggering "Did you mean?".
+  Future<void> _sendDirect(String question) async {
+    final trimmed = question.trim();
+    if (trimmed.isEmpty || _isSending || _selectedCourse == null) return;
+
+    setState(() {
+      _isSending = true;
+      _messages.add(ChatMessage(role: ChatRole.user, content: trimmed, timestamp: DateTime.now()));
+      _messages.add(ChatMessage(role: ChatRole.assistant, content: '', timestamp: DateTime.now(), isLoading: true));
+    });
+    _scrollToBottom();
+
+    try {
+      final answer = await _chatApi.sendMessage(
+        courseTitle: _selectedCourse!.title,
+        courseContext: _courseContext,
+        history: _messages.where((m) => !m.isLoading && !m.isError && !m.isConfirm).toList(),
+        question: trimmed,
+      );
+      if (!mounted) return;
+      setState(() {
+        _messages.removeLast(); // remove loading bubble
+        _messages.add(ChatMessage(role: ChatRole.assistant, content: answer, timestamp: DateTime.now()));
+      });
+      await _cacheService.save(_selectedCourse!.id, trimmed, answer);
+    } catch (e) {
+      _lastFailedQuestion = trimmed;
+      if (!mounted) return;
+      setState(() {
+        if (_messages.isNotEmpty && _messages.last.isLoading) _messages.removeLast();
+        _messages.add(ChatMessage(
+          role: ChatRole.assistant,
+          content: e.toString(),
+          timestamp: DateTime.now(),
+          isError: true,
+        ));
+      });
+    } finally {
+      if (mounted) setState(() => _isSending = false);
+      _scrollToBottom();
+    }
+  }
 
   Widget _buildInputRow() {
     final canSend = _phase == _ChatPhase.chatting && !_isSending;
@@ -509,7 +640,7 @@ class _AssistantBubble extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withValues(alpha: 0.05),
               blurRadius: 4,
               offset: const Offset(0, 1),
             ),

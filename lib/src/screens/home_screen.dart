@@ -102,8 +102,9 @@ class _HomeScreenState extends State<HomeScreen> {
               }
               if (snapshot.hasError) return ErrorBox(snapshot.error.toString());
               final courses = snapshot.data ?? [];
-              if (courses.isEmpty)
+              if (courses.isEmpty) {
                 return const EmptyBox('No courses published yet.');
+              }
               return ProgramGrid(courses: courses);
             },
           ),

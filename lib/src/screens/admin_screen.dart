@@ -95,8 +95,9 @@ class _AdminScreenState extends State<AdminScreen> {
         FutureBuilder<List<Course>>(
           future: future,
           builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting)
+            if (snapshot.connectionState == ConnectionState.waiting) {
               return const LoadingList();
+            }
             if (snapshot.hasError) return ErrorBox(snapshot.error.toString());
             final courses = snapshot.data ?? [];
             return Column(
@@ -229,8 +230,9 @@ class _AdminCourseScreenState extends State<AdminCourseScreen> {
       body: FutureBuilder<CourseDetail?>(
         future: future,
         builder: (context, snapshot) {
-          if (!snapshot.hasData)
+          if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
+          }
           final detail = snapshot.data!;
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -467,10 +469,11 @@ class _TextEditorTabState extends State<_TextEditorTab> {
         _insert('\n[IMG: $token]\n');
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Failed to pick image: $e')));
+      }
     }
   }
 
@@ -613,8 +616,9 @@ class _QaManagerTabState extends State<_QaManagerTab> {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
               }
-              if (snapshot.hasError)
+              if (snapshot.hasError) {
                 return CenteredError(snapshot.error.toString());
+              }
               final items = snapshot.data ?? [];
               if (items.isEmpty) return const EmptyBox('No questions yet.');
               return ListView.separated(
@@ -805,11 +809,12 @@ class _VersionsTabState extends State<_VersionsTab> {
       final content = await MatrixScope.of(
         context,
       ).api.adminGetModuleTextVersion(widget.moduleId, version);
-      if (mounted)
+      if (mounted) {
         setState(() {
           _previewContent = content;
           _loadingPreview = false;
         });
+      }
     } catch (_) {
       if (mounted) setState(() => _loadingPreview = false);
     }

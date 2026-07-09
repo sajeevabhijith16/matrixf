@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 import 'ai_models.dart';
 
 const _geminiApiKey = String.fromEnvironment(
@@ -97,6 +99,14 @@ class GeminiChatApi {
 
     final ok = response.statusCode >= 200 && response.statusCode < 300;
     if (!ok) {
+      if (response.statusCode == 429) {
+        debugPrint(
+          '[GeminiChatApi] ⚠️  QUOTA EXCEEDED (429) — '
+          'Gemini API rate limit hit. '
+          'Wait a minute or check your quota at https://aistudio.google.com. '
+          'Raw body: $body',
+        );
+      }
       throw GeminiChatApiException(
         'Chat request failed: ${response.statusCode} — $body',
       );

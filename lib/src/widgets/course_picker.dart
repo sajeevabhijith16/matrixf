@@ -145,7 +145,7 @@ class _DropdownCard extends StatelessWidget {
           shrinkWrap: true,
           padding: EdgeInsets.zero,
           itemCount: courses.length,
-          separatorBuilder: (_, __) => const Divider(height: 1),
+          separatorBuilder: (_, _) => const Divider(height: 1),
           itemBuilder: (context, index) {
             final course = courses[index];
             return ListTile(

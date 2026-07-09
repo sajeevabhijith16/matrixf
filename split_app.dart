@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 
 void main() {
   final file = File('lib/src/app.dart');
@@ -64,5 +65,5 @@ import 'screens/profile_screen.dart';
 ''';
   File('lib/src/app.dart').writeAsStringSync('$shellImports\n${getSlice(lines.indexWhere((l) => l.contains('// ─── App Shell')), homeIdx)}');
 
-  print('Splitting completed.');
+  debugPrint('Splitting completed.');
 }

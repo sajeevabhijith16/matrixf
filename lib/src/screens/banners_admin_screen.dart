@@ -65,7 +65,7 @@ class _BannersAdminScreenState extends State<BannersAdminScreen> {
           return ListView.separated(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
             itemCount: banners.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 10),
+            separatorBuilder: (_, _) => const SizedBox(height: 10),
             itemBuilder: (context, index) {
               final banner = banners[index];
               return _BannerRow(
@@ -105,7 +105,7 @@ class _BannerRow extends StatelessWidget {
                   child: CachedNetworkImage(
                     imageUrl: banner.imageUrl,
                     fit: BoxFit.cover,
-                    errorWidget: (_, __, ___) =>
+                    errorWidget: (_, _, _) =>
                         const Icon(Icons.image_not_supported_outlined),
                   ),
                 ),

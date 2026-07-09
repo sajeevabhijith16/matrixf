@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 
 void main() {
   void addImport(String filePath, String imp) {
@@ -25,5 +26,5 @@ void main() {
   
   addKeys('lib/src/widgets/shared_widgets.dart');
 
-  print('Imports and keys fixed.');
+  debugPrint('Imports and keys fixed.');
 }

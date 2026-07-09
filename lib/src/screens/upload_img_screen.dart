@@ -322,7 +322,7 @@ class _UploadScreenState extends State<UploadScreen> {
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: _filteredImages.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 12),
+              separatorBuilder: (_, _) => const SizedBox(height: 12),
               itemBuilder: (context, index) {
                 final image = _filteredImages[index];
 
@@ -336,7 +336,7 @@ class _UploadScreenState extends State<UploadScreen> {
                               width: 50,
                               height: 50,
                               fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => const Icon(Icons.broken_image),
+                              errorBuilder: (_, _, _) => const Icon(Icons.broken_image),
                             )
                           : Container(
                               width: 50,

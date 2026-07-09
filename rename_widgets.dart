@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 
 void main() {
   final dir = Directory('lib/src');
@@ -33,7 +34,7 @@ void main() {
     
     if (content != originalContent) {
       file.writeAsStringSync(content);
-      print('Updated \${file.path}');
+      debugPrint('Updated \${file.path}');
     }
   }
 
@@ -47,5 +48,5 @@ void main() {
     }
   }
 
-  print('Renaming completed.');
+  debugPrint('Renaming completed.');
 }

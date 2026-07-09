@@ -112,6 +112,7 @@ class _BannerEditScreenState extends State<BannerEditScreen> {
   }
 
   Future<void> _delete() async {
+    final api = MatrixScope.of(context).api;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -132,7 +133,6 @@ class _BannerEditScreenState extends State<BannerEditScreen> {
     if (confirmed != true) return;
     setState(() => saving = true);
     try {
-      final api = MatrixScope.of(context).api;
       await api.adminDeleteBanner(draft.id!);
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
