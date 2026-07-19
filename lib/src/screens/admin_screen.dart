@@ -5,6 +5,7 @@ import '../app.dart'; // For MatrixScope
 import '../widgets/shared_widgets.dart';
 import '../components/module_text_renderer.dart';
 import '../screens/upload_img_screen.dart';
+import 'admin_reindex_screen.dart';
 import 'banners_admin_screen.dart';
 
 // ─── Admin Screen ─────────────────────────────────────────────────────────────
@@ -64,6 +65,15 @@ class _AdminScreenState extends State<AdminScreen> {
                 Navigator.of(
                   context,
                 ).push(MaterialPageRoute(builder: (_) => const UploadScreen()));
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.auto_awesome),
+              tooltip: 'AI Reindex',
+              onPressed: () {
+                Navigator.of(
+                  context,
+                ).push(MaterialPageRoute(builder: (_) => const AdminReindexScreen()));
               },
             ),
           ],

@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import '../models/models.dart';
 import '../app.dart'; // For MatrixScope
 import '../widgets/shared_widgets.dart';
 import '../ai/gemini_embedding_api.dart';
+import '../ai/gemini_chat_api.dart';
+import '../widgets/ai_answer_renderer.dart';
 
 import "admin_screen.dart";
 // ─── Profile Screen ───────────────────────────────────────────────────────────
@@ -40,6 +43,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
         padding: const EdgeInsets.fromLTRB(16, 56, 16, 24),
         children: [
           const BrandHeader(),
+          const AiAnswerRenderer(
+            content: '''
+# Integration Basics
+
+Integration is one of the two central operations in calculus.
+
+## Key Rules
+
+| Rule | Formula |
+|------|---------|
+| Power Rule | x^(n+1)/(n+1) |
+| Constant | k times integral |
+
+- First bullet point
+- Second bullet point with **bold** text
+
+1. Step one
+2. Step two
+
+> This is a quoted note.
+
+Inline math: \$x^2 + 1\$
+
+\$\$
+\\int x^2 dx = \\frac{x^3}{3} + C
+\$\$
+print("code block test")
+''',
+          ),
           const SizedBox(height: 24),
           Text(
             'Your account',
@@ -139,6 +171,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       }
                     },
                     child: const Text('[DEBUG] Calibrate thresholds'),
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton(
+                    onPressed: () async {
+                      final reply = await GeminiChatApi().sendMessage(
+                        courseTitle: 'Mathematics',
+                        courseContext: 'Integration is the area under a curve...',
+                        history: [],
+                        question: 'Show me a diagram of the area under a curve',
+                        availableMedia: {'integration_areaunderthecurve': 'area under the curve , integration'},
+                      );
+                      debugPrint('[AI-DEBUG] $reply');
+                    },
+                    child: const Text('[DEBUG] Test B6'),
                   ),
                 ],
               ),
@@ -263,19 +309,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _googleSignIn(BuildContext context) async {
     final scope = MatrixScope.of(context);
-    final oauthUrl = scope.api.getGoogleOAuthUrl('matrixf://auth/callback');
-    final uri = Uri.parse(oauthUrl);
+    final oauthUrl = scope.api.getGoogleOAuthUrl('matrixfauth://callback');
     try {
-      final launched = await launchUrl(
-        uri,
-        mode: LaunchMode.externalApplication,
+      final result = await FlutterWebAuth2.authenticate(
+        url: oauthUrl,
+        callbackUrlScheme: 'matrixfauth',
       );
-      if (!launched && context.mounted) {
-        showSnack(context, 'Could not open browser. Please try again.');
+      final callbackUri = Uri.parse(result);
+      final ok = await scope.api.handleOAuthCallback(callbackUri);
+      if (ok) {
+        await scope.refreshProfile();
+      } else if (context.mounted) {
+        showSnack(context, 'Google sign-in failed. Please try again.');
       }
     } catch (e) {
       if (context.mounted) {
-        showSnack(context, 'Could not open browser for Google sign-in.');
+        showSnack(context, 'Google sign-in was cancelled or failed.');
       }
     }
   }

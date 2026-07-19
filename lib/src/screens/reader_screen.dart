@@ -1,3 +1,5 @@
+import '../widgets/ai_chat_overlay.dart';
+import '../ai/ai_models.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
@@ -121,17 +123,17 @@ class _ReaderScreenState extends State<ReaderScreen> {
               const SizedBox(height: 16),
               Text(
                 'Welcome back!',
-                style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                style: Theme.of(
+                  ctx,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 8),
               Text(
                 'You were ${(_readPercent * 100).toStringAsFixed(0)}% through this module.',
                 textAlign: TextAlign.center,
-                style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
-                      color: Colors.grey.shade600,
-                    ),
+                style: Theme.of(
+                  ctx,
+                ).textTheme.bodyMedium?.copyWith(color: Colors.grey.shade600),
               ),
               const SizedBox(height: 24),
               Row(
@@ -145,7 +147,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                       child: const Text('Start Over'),
                     ),
@@ -160,7 +163,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
                       style: FilledButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                       child: const Text('Continue'),
                     ),
@@ -295,13 +299,35 @@ class _ReaderScreenState extends State<ReaderScreen> {
                     : const SizedBox.shrink(),
               ),
               // ── Content ─────────────────────────────────────────────────
-              Expanded(
-                child: _buildBody(context, snapshot),
-              ),
+              Expanded(child: _buildBody(context, snapshot)),
             ],
           ),
         );
       },
+    );
+  }
+
+  Future<void> _openAiTutor(BuildContext context, ModuleText data) async {
+    final api = MatrixScope.of(context).api;
+    var courseTitle = data.module.title; // fallback if lookup fails
+    try {
+      final courses = await api.listCourses();
+      final match = courses.where((c) => c.id == data.module.courseId);
+      if (match.isNotEmpty) {
+        courseTitle = match.first.title;
+      }
+    } catch (e) {
+      debugPrint('[ReaderScreen] Failed to resolve course title: $e');
+      // Non-fatal: falls back to module title, chat still works.
+    }
+    if (!context.mounted) return;
+    openAiChatSheet(
+      context,
+      initialCourse: AiCourse(
+        id: data.module.courseId,
+        title: courseTitle,
+        slug: '',
+      ),
     );
   }
 
@@ -346,6 +372,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
               ? null
               : () => showQaSheet(context, data.questions),
         ),
+        // ── AI Tutor button ──────────────────────────────────────────────
+        IconButton(
+          tooltip: 'AI Tutor',
+          icon: const Icon(Icons.auto_awesome),
+          onPressed: data == null ? null : () => _openAiTutor(context, data),
+        ),
       ],
     );
   }
@@ -378,8 +410,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
                 isDense: true,
                 filled: true,
                 fillColor: cs.surface,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,
@@ -397,8 +431,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
               opacity: 1.0,
               duration: const Duration(milliseconds: 150),
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: _totalMatches == 0
                       ? cs.errorContainer
@@ -443,7 +476,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
     if (snapshot.hasError) {
       return CenteredError(snapshot.error.toString());
     }
-    final data = snapshot.data!;
+    final data = snapshot.data;
+    if (data == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
     return ListView(
       controller: _scrollController,

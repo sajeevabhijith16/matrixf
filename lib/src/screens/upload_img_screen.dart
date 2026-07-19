@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../api.dart';
 import '../models/inline_image.dart';
+import '../models/pending_image_token.dart';
 
 class UploadScreen extends StatefulWidget {
   const UploadScreen({super.key});
@@ -21,9 +22,15 @@ class _UploadScreenState extends State<UploadScreen> {
   bool _uploading = false;
 
   final TextEditingController _tokenController = TextEditingController();
+  final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
 
   List<InlineImage> _images = [];
+
+  List<PendingImageToken> _pendingTokens = [];
+  bool _scanningPending = false;
+  bool _hasScannedPending = false;
+  final ScrollController _formScrollController = ScrollController();
 
   @override
   void initState() {
@@ -47,6 +54,37 @@ class _UploadScreenState extends State<UploadScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _scanPendingImages() async {
+    setState(() => _scanningPending = true);
+    try {
+      final pending = await _api.adminScanPendingImageTokens();
+      if (!mounted) return;
+      setState(() {
+        _pendingTokens = pending;
+        _hasScannedPending = true;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Scan failed: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _scanningPending = false);
+    }
+  }
+
+  void _selectPendingToken(PendingImageToken pending) {
+    setState(() => _tokenController.text = pending.token);
+    _formScrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Token "${pending.token}" filled in — select an image and upload.')),
+    );
   }
 
   List<InlineImage> get _filteredImages {
@@ -121,10 +159,16 @@ class _UploadScreenState extends State<UploadScreen> {
 
     setState(() => _uploading = true);
     try {
-      await _api.adminUploadImageToken(token, _selectedImage!);
+      await _api.adminUploadImageToken(
+        token, 
+        _selectedImage!,
+        description: _descriptionController.text,
+      );
       setState(() {
         _selectedImage = null;
+        _pendingTokens.removeWhere((p) => p.token.toLowerCase() == token.toLowerCase());
         _tokenController.clear();
+        _descriptionController.clear();
       });
       await _loadImages();
       if (mounted) {
@@ -174,7 +218,9 @@ class _UploadScreenState extends State<UploadScreen> {
   @override
   void dispose() {
     _tokenController.dispose();
+    _descriptionController.dispose();
     _searchController.dispose();
+    _formScrollController.dispose();
     super.dispose();
   }
 
@@ -185,6 +231,7 @@ class _UploadScreenState extends State<UploadScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text("Image Tokens")),
       body: _loading ? const Center(child: CircularProgressIndicator()) : SingleChildScrollView(
+        controller: _formScrollController,
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -240,6 +287,20 @@ class _UploadScreenState extends State<UploadScreen> {
 
             const SizedBox(height: 20),
 
+            Text("Image Description (Optional)", style: Theme.of(context).textTheme.titleMedium),
+
+            const SizedBox(height: 8),
+
+            TextField(
+              controller: _descriptionController,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                hintText: "Describe what this image shows (helps the AI Tutor reference it)",
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
             Text(
               "Inline Usage",
               style: Theme.of(context).textTheme.titleMedium,
@@ -289,6 +350,76 @@ class _UploadScreenState extends State<UploadScreen> {
                 ),
               ],
             ),
+
+            const SizedBox(height: 32),
+
+            Text(
+              "Pending Images",
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+
+            const SizedBox(height: 8),
+
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    _hasScannedPending
+                        ? '${_pendingTokens.length} token(s) referenced in course content without an uploaded image.'
+                        : 'Scan your courses for [IMG:]/[GIF:] tokens that have no image uploaded yet.',
+                    style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                OutlinedButton.icon(
+                  onPressed: _scanningPending ? null : _scanPendingImages,
+                  icon: _scanningPending
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.search),
+                  label: Text(_scanningPending ? 'Scanning...' : 'Scan'),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            if (_hasScannedPending && _pendingTokens.isEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text('No pending tokens — all referenced images are uploaded.'),
+              ),
+
+            if (_pendingTokens.isNotEmpty)
+              ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _pendingTokens.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 8),
+                itemBuilder: (context, index) {
+                  final pending = _pendingTokens[index];
+                  return Card(
+                    color: Colors.amber.shade50,
+                    child: ListTile(
+                      leading: const Icon(Icons.image_not_supported_outlined, color: Colors.orange),
+                      title: Text(
+                        pending.token,
+                        style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: Text('${pending.courseTitle} → ${pending.moduleTitle}'),
+                      trailing: TextButton(
+                        onPressed: () => _selectPendingToken(pending),
+                        child: const Text('Upload'),
+                      ),
+                    ),
+                  );
+                },
+              ),
 
             const SizedBox(height: 32),
 

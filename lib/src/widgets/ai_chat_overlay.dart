@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:matrixf/src/models/models.dart';
 
 import '../app.dart';
 import '../ai/ai_models.dart';
 import '../ai/gemini_chat_api.dart';
 import '../ai/gemini_embedding_api.dart';
 import '../ai/ai_cache_service.dart';
+import '../components/text_blocks.dart';
 import 'course_picker.dart';
+import 'ai_answer_renderer.dart';
 
 class AiChatOverlay extends StatelessWidget {
   const AiChatOverlay({super.key, required this.child, this.initialCourse});
@@ -146,6 +149,10 @@ class _AiChatSheetState extends State<_AiChatSheet> {
   String _pendingQuestion = '';
   CacheEntry? _pendingSimilar;
   String _courseContext = '';
+  bool _courseIsIndexed = false;
+  Map<String, ModuleMedia> _courseMediaMap = {};
+  // ignore: unused_field
+  Map<String, String> _availableMedia = {}; // token -> description
 
   // Course picker state
   List<AiCourse> _courses = [];
@@ -247,21 +254,75 @@ class _AiChatSheetState extends State<_AiChatSheet> {
   Future<void> _loadCourseContext(AiCourse course) async {
     try {
       final api = MatrixScope.of(context).api;
-      final modules = await api.listModulesByCourseId(course.id);
-      final buffer = StringBuffer();
-      for (final m in modules.take(3)) {
-        final text = await api.getModuleText(m.id);
-        buffer.write('${m.title}\n${text.content}\n\n');
-        if (buffer.length > 20000) break;
-      }
+      final hasChunks = await api.courseHasChunks(course.id);
+
       if (!mounted) return;
-      setState(() {
-        _courseContext =
+      setState(() => _courseIsIndexed = hasChunks);
+
+      if (hasChunks) {
+        // RAG path: media map is still built from full module content since
+        // images can appear anywhere; retrieval itself happens per-question
+        // in _buildRetrievedContext(). No bulk course_context needed here.
+        final modules = await api.listModulesByCourseId(course.id);
+        final mergedMediaMap = <String, ModuleMedia>{};
+        final allText = StringBuffer();
+        for (final m in modules) {
+          final text = await api.getModuleText(m.id);
+          mergedMediaMap.addAll(text.mediaMap);
+          allText.write(text.content);
+        }
+        final referencedKeys = extractMediaKeys(allText.toString());
+        final descriptions = referencedKeys.isEmpty
+            ? <String, String>{}
+            : await api.getImageDescriptions(referencedKeys.toList());
+        if (!mounted) return;
+        setState(() {
+          _courseMediaMap = mergedMediaMap;
+          _availableMedia = descriptions;
+        });
+      } else {
+        // Fallback: course not yet reindexed — use the old bulk-context
+        // approach so chat still works, just without retrieval precision.
+        final modules = await api.listModulesByCourseId(course.id);
+        final buffer = StringBuffer();
+        final mergedMediaMap = <String, ModuleMedia>{};
+        for (final m in modules.take(3)) {
+          final text = await api.getModuleText(m.id);
+          buffer.write('${m.title}\n${text.content}\n\n');
+          mergedMediaMap.addAll(text.mediaMap);
+          if (buffer.length > 20000) break;
+        }
+        final trimmedContext =
             buffer.toString().substring(0, buffer.length.clamp(0, 20000));
-      });
+        final referencedKeys = extractMediaKeys(trimmedContext);
+        final descriptions = referencedKeys.isEmpty
+            ? <String, String>{}
+            : await api.getImageDescriptions(referencedKeys.toList());
+        if (!mounted) return;
+        setState(() {
+          _courseContext = trimmedContext;
+          _courseMediaMap = mergedMediaMap;
+          _availableMedia = descriptions;
+        });
+      }
     } catch (e) {
       debugPrint('[AiChatSheet] Failed to load course context: $e');
     }
+  }
+
+  /// Retrieves the most relevant chunks for [questionEmbedding] and joins
+  /// them into a context string for this specific question. Falls back to
+  /// the static _courseContext if the course isn't indexed yet.
+  Future<String> _buildRetrievedContext(List<double> questionEmbedding) async {
+    if (!_courseIsIndexed) return _courseContext;
+
+    final rows = await MatrixScope.of(context).api.callMatchCourseChunks(
+          courseId: _selectedCourse!.id,
+          embedding: questionEmbedding,
+          count: 5,
+        );
+    if (rows.isEmpty) return '';
+    return rows.map((r) => r['chunk_text']?.toString() ?? '').join('\n\n---\n\n');
   }
 
   @override
@@ -401,7 +462,7 @@ class _AiChatSheetState extends State<_AiChatSheet> {
       );
     }
     if (m.role == ChatRole.user) return _UserBubble(text: m.content);
-    return _AssistantBubble(text: m.content);
+    return _AssistantBubble(text: m.content, mediaMap: _courseMediaMap);
   }
 
   void _scrollToBottom() {
@@ -413,6 +474,15 @@ class _AiChatSheetState extends State<_AiChatSheet> {
         curve: Curves.easeOut,
       );
     });
+  }
+
+  bool _wasAnswerAlreadyShown(String answer) {
+    return _messages.any((m) =>
+        m.role == ChatRole.assistant &&
+        !m.isLoading &&
+        !m.isError &&
+        !m.isConfirm &&
+        m.content == answer);
   }
 
   Future<void> _onSend(String question) async {
@@ -428,36 +498,86 @@ class _AiChatSheetState extends State<_AiChatSheet> {
     _scrollToBottom();
 
     try {
-      final result = await _cacheService.lookup(_selectedCourse!.id, trimmed);
+      final questionEmbedding = await _embeddingApi.embed(trimmed);
+      final result = await _cacheService.lookupWithEmbedding(
+        _selectedCourse!.id,
+        questionEmbedding,
+      );
       if (!mounted) return;
       setState(() => _messages.removeLast()); // remove loading bubble
 
       switch (result) {
         case CacheHit(:final entry):
-          setState(() {
-            _messages.add(ChatMessage(role: ChatRole.assistant, content: entry.answer, timestamp: DateTime.now()));
-          });
-          await _cacheService.incrementHit(entry.id);
+          if (_wasAnswerAlreadyShown(entry.answer)) {
+            // Same answer already shown in this conversation — force a
+            // fresh Gemini call instead of repeating it verbatim.
+            final retrievedContext = await _buildRetrievedContext(questionEmbedding);
+            final answer = await _chatApi.sendMessage(
+              courseTitle: _selectedCourse!.title,
+              courseContext: retrievedContext,
+              history: _messages.where((m) => !m.isLoading && !m.isError && !m.isConfirm).toList(),
+              question: '$trimmed\n\n(Note: I asked something very similar '
+                  'earlier in this chat and already have that answer — '
+                  'please explain it differently, e.g. with a new example '
+                  'or a different angle, rather than repeating the same '
+                  'explanation.)',
+              availableMedia: _availableMedia,
+            );
+            if (!mounted) return;
+            setState(() {
+              _messages.add(ChatMessage(role: ChatRole.assistant, content: answer, timestamp: DateTime.now()));
+            });
+            await _cacheService.save(_selectedCourse!.id, trimmed, answer, bypassDedupGuard: true);
+          } else {
+            setState(() {
+              _messages.add(ChatMessage(role: ChatRole.assistant, content: entry.answer, timestamp: DateTime.now()));
+            });
+            await _cacheService.incrementHit(entry.id);
+          }
 
         case CacheSimilar(:final best):
-          _pendingSimilar = best;
-          _pendingQuestion = trimmed;
-          setState(() {
-            _messages.add(ChatMessage(
-              role: ChatRole.assistant,
-              content: best.question,
-              timestamp: DateTime.now(),
-              isConfirm: true,
-            ));
-            _phase = _ChatPhase.awaitingConfirm;
-          });
+          if (_wasAnswerAlreadyShown(best.answer)) {
+            // Would just confirm into a repeat — skip the "Did you mean?"
+            // step entirely and get a fresh, differently-angled answer.
+            final retrievedContext = await _buildRetrievedContext(questionEmbedding);
+            final answer = await _chatApi.sendMessage(
+              courseTitle: _selectedCourse!.title,
+              courseContext: retrievedContext,
+              history: _messages.where((m) => !m.isLoading && !m.isError && !m.isConfirm).toList(),
+              question: '$trimmed\n\n(Note: I asked something very similar '
+                  'earlier in this chat and already have that answer — '
+                  'please explain it differently, e.g. with a new example '
+                  'or a different angle, rather than repeating the same '
+                  'explanation.)',
+              availableMedia: _availableMedia,
+            );
+            if (!mounted) return;
+            setState(() {
+              _messages.add(ChatMessage(role: ChatRole.assistant, content: answer, timestamp: DateTime.now()));
+            });
+            await _cacheService.save(_selectedCourse!.id, trimmed, answer, bypassDedupGuard: true);
+          } else {
+            _pendingSimilar = best;
+            _pendingQuestion = trimmed;
+            setState(() {
+              _messages.add(ChatMessage(
+                role: ChatRole.assistant,
+                content: best.question,
+                timestamp: DateTime.now(),
+                isConfirm: true,
+              ));
+              _phase = _ChatPhase.awaitingConfirm;
+            });
+          }    
 
         case CacheMiss():
+          final retrievedContext = await _buildRetrievedContext(questionEmbedding);
           final answer = await _chatApi.sendMessage(
             courseTitle: _selectedCourse!.title,
-            courseContext: _courseContext,
+            courseContext: retrievedContext,
             history: _messages.where((m) => !m.isLoading && !m.isError && !m.isConfirm).toList(),
             question: trimmed,
+            availableMedia: _availableMedia,
           );
           if (!mounted) return;
           setState(() {
@@ -538,11 +658,14 @@ class _AiChatSheetState extends State<_AiChatSheet> {
     _scrollToBottom();
 
     try {
+      final questionEmbedding = await _embeddingApi.embed(trimmed);
+      final retrievedContext = await _buildRetrievedContext(questionEmbedding);
       final answer = await _chatApi.sendMessage(
         courseTitle: _selectedCourse!.title,
-        courseContext: _courseContext,
+        courseContext: retrievedContext,
         history: _messages.where((m) => !m.isLoading && !m.isError && !m.isConfirm).toList(),
         question: trimmed,
+        availableMedia: _availableMedia,
       );
       if (!mounted) return;
       setState(() {
@@ -621,42 +744,48 @@ class _UserBubble extends StatelessWidget {
 }
 
 class _AssistantBubble extends StatelessWidget {
-  const _AssistantBubble({required this.text});
+  const _AssistantBubble({required this.text, this.mediaMap = const {}});
   final String text;
+  final Map<String, ModuleMedia> mediaMap;
 
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.75,
-        ),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          border: Border.all(color: Colors.grey.shade200),
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 4,
-              offset: const Offset(0, 1),
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Padding(
-              padding: EdgeInsets.only(top: 2, right: 8),
-              child: Icon(Icons.auto_awesome, size: 16, color: Color(0xFF18664B)),
-            ),
-            Flexible(child: Text(text)),
-          ],
-        ),
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: Colors.grey.shade200),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.auto_awesome, size: 16, color: Color(0xFF18664B)),
+              const SizedBox(width: 6),
+              Text(
+                'AI Tutor',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: const Color(0xFF18664B),
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          AiAnswerRenderer(content: text, mediaMap: mediaMap),
+        ],
       ),
     );
   }

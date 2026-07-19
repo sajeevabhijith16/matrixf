@@ -4,7 +4,9 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'components/text_blocks.dart';
 import 'models/models.dart';
+import 'models/pending_image_token.dart';
 
 const supabaseUrl = String.fromEnvironment(
   'SUPABASE_URL',
@@ -280,6 +282,25 @@ class MatrixApi {
 
   // ─── AI Chat Cache ───────────────────────────────────────────────────────
 
+  /// Returns {token: description} for the given tokens that have a
+  /// non-null description set. Tokens with no description are omitted.
+  Future<Map<String, String>> getImageDescriptions(List<String> tokens) async {
+    if (tokens.isEmpty) return {};
+    final rows = await _restGet('course_images', {
+      'select': 'token,description',
+      'token': 'in.(${tokens.join(',')})',
+    });
+    final map = <String, String>{};
+    for (final row in rows) {
+      final token = row['token']?.toString();
+      final description = row['description']?.toString();
+      if (token != null && description != null && description.trim().isNotEmpty) {
+        map[token] = description.trim();
+      }
+    }
+    return map;
+  }
+
   /// Returns all modules for a course ordered by display_order.
   /// Used by the AI to build course context for Gemini. Public, no auth.
   Future<List<TextModule>> listModulesByCourseId(String courseId) async {
@@ -332,6 +353,58 @@ class MatrixApi {
       {'id': 'eq.$id'},
       {'hit_count': currentCount + 1},
     );
+  }
+
+  // ─── Course Content RAG ──────────────────────────────────────────────────
+
+  /// Deletes all existing chunks for a course. Called before reindexing.
+  Future<void> adminDeleteCourseChunks(String courseId) async {
+    _requireSession();
+    await _restDelete('course_content_chunks', {'course_id': 'eq.$courseId'});
+  }
+
+  /// Inserts a single content chunk with its embedding.
+  Future<void> adminInsertCourseChunk({
+    required String courseId,
+    required String moduleId,
+    required int chunkIndex,
+    required String chunkText,
+    required List<double> embedding,
+  }) async {
+    _requireSession();
+    await _restPost('course_content_chunks', {
+      'course_id': courseId,
+      'module_id': moduleId,
+      'chunk_index': chunkIndex,
+      'chunk_text': chunkText,
+      'embedding': embedding,
+    });
+  }
+
+  /// Retrieves the top [count] most relevant chunks for [courseId] given
+  /// a question's [embedding]. Public, no auth — used during chat.
+  Future<List<Map<String, dynamic>>> callMatchCourseChunks({
+    required String courseId,
+    required List<double> embedding,
+    int count = 5,
+  }) async {
+    final result = await _rpcPost('match_course_chunks', {
+      'p_course_id': courseId,
+      'p_embedding': embedding,
+      'p_count': count,
+    });
+    if (result == null) return [];
+    return (result as List).cast<Map<String, dynamic>>();
+  }
+
+  /// Returns true if a course has at least one indexed chunk.
+  Future<bool> courseHasChunks(String courseId) async {
+    final rows = await _restGet('course_content_chunks', {
+      'select': 'id',
+      'course_id': 'eq.$courseId',
+      'limit': '1',
+    });
+    return rows.isNotEmpty;
   }
 
   // ─── Admin: courses ─────────────────────────────────────────────────────────
@@ -599,6 +672,72 @@ class MatrixApi {
 
   // ─── Admin: image tokens (course_images) ────────────────────────────────────
 
+  /// Scans every course's latest module content for [IMG:]/[GIF:] tokens
+  /// and returns the ones that have no uploaded image in course_images yet.
+  /// Deduplicated globally by token (first occurrence wins for display).
+  Future<List<PendingImageToken>> adminScanPendingImageTokens() async {
+    _requireSession();
+
+    // 1. All modules — for id -> (title, course_id) lookup.
+    final moduleRows = await _restGet('modules', {
+      'select': 'id,title,course_id',
+    });
+    final moduleInfo = <String, Map<String, String>>{};
+    for (final row in moduleRows) {
+      final id = row['id']?.toString();
+      if (id == null) continue;
+      moduleInfo[id] = {
+        'title': row['title']?.toString() ?? 'Untitled module',
+        'course_id': row['course_id']?.toString() ?? '',
+      };
+    }
+
+    // 2. All courses (including unpublished/drafts) — for title lookup.
+    final courses = await adminListCourses();
+    final courseTitleById = {for (final c in courses) c.id: c.title};
+
+    // 3. Latest content for every module, in one query.
+    final versionRows = await _restGet('module_text_versions', {
+      'select': 'module_id,content',
+      'is_latest': 'eq.true',
+    });
+
+    // 4. Tokens that already have an uploaded image.
+    final imageRows = await _restGet('course_images', {'select': 'token'});
+    final uploadedTokens = imageRows
+        .map((r) => r['token']?.toString().toLowerCase())
+        .whereType<String>()
+        .toSet();
+
+    // 5. Scan content, collect tokens not yet uploaded.
+    final seen = <String>{};
+    final pending = <PendingImageToken>[];
+    for (final row in versionRows) {
+      final moduleId = row['module_id']?.toString();
+      final content = row['content']?.toString();
+      if (moduleId == null || content == null) continue;
+      final info = moduleInfo[moduleId];
+      if (info == null) continue;
+
+      final keys = extractMediaKeys(content);
+      for (final key in keys) {
+        final lower = key.toLowerCase();
+        if (uploadedTokens.contains(lower)) continue;
+        if (seen.contains(lower)) continue;
+        seen.add(lower);
+        pending.add(PendingImageToken(
+          token: key,
+          moduleId: moduleId,
+          moduleTitle: info['title']!,
+          courseId: info['course_id']!,
+          courseTitle: courseTitleById[info['course_id']] ?? 'Unknown course',
+        ));
+      }
+    }
+
+    return pending;
+  }
+
   Future<List<Map<String, dynamic>>> adminListImageTokens() async {
     _requireSession();
     final rows = await _restGet('course_images', {
@@ -608,7 +747,11 @@ class MatrixApi {
     return rows.cast<Map<String, dynamic>>();
   }
 
-  Future<String> adminUploadImageToken(String token, File file) async {
+  Future<String> adminUploadImageToken(
+    String token,
+    File file, {
+    String? description,
+  }) async {
     _requireSession();
 
     final ext = file.path.split('.').last.toLowerCase();
@@ -635,9 +778,18 @@ class MatrixApi {
     await _restPost('course_images', {
       'token': token,
       'storage_path': storagePath,
+      if (description != null && description.trim().isNotEmpty)
+        'description': description.trim(),
     });
 
     return publicImageUrl(storagePath);
+  }
+
+  Future<void> adminUpdateImageDescription(String id, String description) async {
+    _requireSession();
+    await _restPatch('course_images', {'id': 'eq.$id'}, {
+      'description': description.trim(),
+    });
   }
 
   Future<void> adminDeleteImageToken({

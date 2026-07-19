@@ -20,7 +20,7 @@ class MatrixApp extends StatefulWidget {
   State<MatrixApp> createState() => _MatrixAppState();
 }
 
-class _MatrixAppState extends State<MatrixApp> {
+class _MatrixAppState extends State<MatrixApp> with WidgetsBindingObserver {
   final MatrixApi api = matrixApi;
   int tab = 0;
   Profile? profile;
@@ -30,8 +30,30 @@ class _MatrixAppState extends State<MatrixApp> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initApi();
     _initDeepLinks();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _onAppResumed();
+    }
+  }
+
+  /// Catches sign-ins that completed via an external browser/Custom Tab
+  /// (e.g. Google OAuth) while the app was backgrounded — this is a
+  /// resilience safety net in addition to the direct handleOAuthCallback
+  /// path in _googleSignIn, covering cases where the app process was
+  /// suspended/recreated during a prolonged background period.
+  Future<void> _onAppResumed() async {
+    if (!api.isSignedIn || profile != null) return;
+    try {
+      await refreshProfile();
+    } catch (e) {
+      debugPrint('Resume profile refresh failed: $e');
+    }
   }
 
   void _initDeepLinks() {
@@ -53,6 +75,7 @@ class _MatrixAppState extends State<MatrixApp> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _linkSub?.cancel();
     super.dispose();
   }

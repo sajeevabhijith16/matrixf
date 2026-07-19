@@ -40,6 +40,7 @@ class GeminiChatApi {
     required String courseContext,
     required List<ChatMessage> history,
     required String question,
+    Map<String, String> availableMedia = const {},
   }) async {
     if (_geminiApiKey.isEmpty) {
       throw GeminiChatApiException(
@@ -60,6 +61,25 @@ class GeminiChatApi {
         'something related to the course."\n'
         'Do not make up information. Base all your answers solely on the '
         'course content below.\n\n'
+        'FORMATTING: Use the following formatting only where it genuinely '
+        'improves clarity — do not force it into every answer:\n'
+        '- Headings: # for main heading, ## for subheading, ### for minor '
+        'heading (use sparingly, only for longer multi-part answers)\n'
+        '- **bold**, *italic*, `inline code` for emphasis\n'
+        '- Bullet lists with "- " and numbered lists with "1. "\n'
+        '- Tables: use markdown pipe format only, e.g.:\n'
+        '  | Header 1 | Header 2 |\n'
+        '  |----------|----------|\n'
+        '  | value    | value    |\n'
+        '  Do NOT use ASCII box-drawing tables (with +---+ borders).\n'
+        '- Math: wrap inline math in single dollar signs like \$x^2\$, and '
+        'standalone equations in double dollar signs on their own lines '
+        'like \$\$\\int x^2 dx = \\frac{x^3}{3} + C\$\$. Use standard LaTeX '
+        'syntax inside the dollar signs.\n'
+        '- Code: use triple-backtick fenced blocks for code snippets.\n'
+        'For a short, simple answer, plain sentences are fine — do not add '
+        'headings or tables to a one-line answer.\n\n'
+        '${_buildMediaSection(availableMedia)}'
         '--- COURSE CONTENT START ---\n'
         '$trimmedContext\n'
         '--- COURSE CONTENT END ---';
@@ -145,5 +165,19 @@ class GeminiChatApi {
     }
 
     return text;
+  }
+
+  String _buildMediaSection(Map<String, String> availableMedia) {
+    if (availableMedia.isEmpty) return '';
+    final lines = availableMedia.entries
+        .map((e) => '- ${e.key}: ${e.value}')
+        .join('\n');
+    return 'AVAILABLE IMAGES: You may reference at most ONE of the '
+        'following existing course images if — and only if — it is '
+        'directly relevant to your answer. To include one, put it on its '
+        'own line using EXACTLY this format: [IMG: the_exact_key]\n'
+        'Do NOT invent keys that are not in this list. Do NOT include an '
+        'image unless it genuinely helps explain your answer.\n'
+        '$lines\n\n';
   }
 }
