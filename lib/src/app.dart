@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'ai/ai_models.dart';
 import 'api.dart';
 import 'models/models.dart';
@@ -31,8 +32,20 @@ class _MatrixAppState extends State<MatrixApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _initGoogleSignIn();
     _initApi();
     _initDeepLinks();
+  }
+
+  Future<void> _initGoogleSignIn() async {
+    try {
+      await GoogleSignIn.instance.initialize(
+        serverClientId:
+            '671119999667-2t4gb0s6avs6k6mq77lop28km6mbda2k.apps.googleusercontent.com',
+      );
+    } catch (e) {
+      debugPrint('GoogleSignIn init failed: $e');
+    }
   }
 
   @override
@@ -108,7 +121,6 @@ class _MatrixAppState extends State<MatrixApp> with WidgetsBindingObserver {
     }
   }
 
-
   Future<void> refreshProfile() async {
     if (!api.isSignedIn) {
       setState(() => profile = null);
@@ -139,9 +151,7 @@ class _MatrixAppState extends State<MatrixApp> with WidgetsBindingObserver {
       return MaterialApp(
         debugShowCheckedModeBanner: false,
         theme: _theme(),
-        home: const Scaffold(
-          body: Center(child: CircularProgressIndicator()),
-        ),
+        home: const Scaffold(body: Center(child: CircularProgressIndicator())),
       );
     }
 
@@ -273,17 +283,27 @@ class _MatrixShellState extends State<MatrixShell> {
       const ProfileScreen(),
     ];
     final items = [
-      const NavigationDestination(icon: Icon(Icons.home_outlined), label: 'Home'),
+      const NavigationDestination(
+        icon: Icon(Icons.home_outlined),
+        label: 'Home',
+      ),
       const NavigationDestination(icon: Icon(Icons.search), label: 'Catalog'),
-      const NavigationDestination(icon: Icon(Icons.menu_book_outlined), label: 'Library'),
-      const NavigationDestination(icon: Icon(Icons.support_agent), label: 'Support'),
-      const NavigationDestination(icon: Icon(Icons.person_outline), label: 'Profile'),
+      const NavigationDestination(
+        icon: Icon(Icons.menu_book_outlined),
+        label: 'Library',
+      ),
+      const NavigationDestination(
+        icon: Icon(Icons.support_agent),
+        label: 'Support',
+      ),
+      const NavigationDestination(
+        icon: Icon(Icons.person_outline),
+        label: 'Profile',
+      ),
     ];
     final safeTab = widget.tab >= pages.length ? 0 : widget.tab;
     return Scaffold(
-      body: AiChatOverlay(
-        child: pages[safeTab],
-      ),
+      body: AiChatOverlay(child: pages[safeTab]),
       bottomNavigationBar: NavigationBar(
         selectedIndex: safeTab,
         onDestinationSelected: widget.onTabChanged,

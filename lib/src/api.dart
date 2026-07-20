@@ -110,6 +110,19 @@ class MatrixApi {
     });
   }
 
+  /// Completes sign-in using a native Google ID token obtained via
+  /// Credential Manager (google_sign_in package). No browser/redirect
+  /// involved — Skip Nonce Check must be enabled in Supabase's Google
+  /// provider settings for this to work reliably (see Module E1).
+  Future<void> signInWithGoogleIdToken(String idToken) async {
+    final data = await _authPost('/token?grant_type=id_token', {
+      'provider': 'google',
+      'id_token': idToken,
+    });
+    session = Session.fromJson(data);
+    await _saveSession();
+  }
+
   void signOut() {
     session = null;
     SharedPreferences.getInstance().then(
@@ -353,6 +366,28 @@ class MatrixApi {
       {'id': 'eq.$id'},
       {'hit_count': currentCount + 1},
     );
+  }
+
+  // ─── AI Quiz Cache ───────────────────────────────────────────────────────
+
+  Future<List<Map<String, dynamic>>> callMatchQuizCache({
+    required String courseId,
+    required List<double> embedding,
+    required double threshold,
+    int count = 1,
+  }) async {
+    final result = await _rpcPost('match_quiz_cache', {
+      'p_course_id': courseId,
+      'p_embedding': embedding,
+      'p_threshold': threshold,
+      'p_count': count,
+    });
+    if (result == null) return [];
+    return (result as List).cast<Map<String, dynamic>>();
+  }
+
+  Future<void> insertQuizCache(Map<String, dynamic> row) async {
+    await _restPost('ai_quiz_cache', row);
   }
 
   // ─── Course Content RAG ──────────────────────────────────────────────────

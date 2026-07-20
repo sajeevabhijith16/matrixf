@@ -3,9 +3,11 @@ import 'package:matrixf/src/models/models.dart';
 
 import '../app.dart';
 import '../ai/ai_models.dart';
+import '../ai/ai_cache_service.dart';
 import '../ai/gemini_chat_api.dart';
 import '../ai/gemini_embedding_api.dart';
-import '../ai/ai_cache_service.dart';
+import '../ai/ai_quiz_service.dart';
+import '../ai/local_chat_history.dart';
 import '../components/text_blocks.dart';
 import 'course_picker.dart';
 import 'ai_answer_renderer.dart';
@@ -144,6 +146,9 @@ class _AiChatSheetState extends State<_AiChatSheet> {
   final TextEditingController _inputCtrl = TextEditingController();
   final ScrollController _scrollCtrl = ScrollController();
 
+  final LocalChatHistory _history = LocalChatHistory();
+  late String _sessionId;
+
   bool _isSending = false;
   String _lastFailedQuestion = '';
   String _pendingQuestion = '';
@@ -162,10 +167,12 @@ class _AiChatSheetState extends State<_AiChatSheet> {
   late final GeminiEmbeddingApi _embeddingApi;
   late final GeminiChatApi _chatApi;
   late final AiCacheService _cacheService;
+  late final AiQuizService _quizService;
 
   @override
   void initState() {
     super.initState();
+    _sessionId = DateTime.now().millisecondsSinceEpoch.toString();
     if (widget.initialCourse != null) {
       _selectedCourse = widget.initialCourse;
       _phase = _ChatPhase.chatting;
@@ -191,6 +198,11 @@ class _AiChatSheetState extends State<_AiChatSheet> {
       _chatApi = GeminiChatApi();
       _cacheService = AiCacheService(
         embeddingApi: _embeddingApi,
+        matrixApi: MatrixScope.of(context).api,
+      );
+      _quizService = AiQuizService(
+        embeddingApi: _embeddingApi,
+        chatApi: _chatApi,
         matrixApi: MatrixScope.of(context).api,
       );
       _servicesInitialized = true;
@@ -231,7 +243,9 @@ class _AiChatSheetState extends State<_AiChatSheet> {
     final scope = MatrixScope.of(context);
     if (!scope.api.isSignedIn) {
       Navigator.of(context).pop(); // close the sheet
-      scope.requestAiSignIn(course); // switches to Profile tab, remembers course
+      scope.requestAiSignIn(
+        course,
+      ); // switches to Profile tab, remembers course
       return;
     }
 
@@ -249,6 +263,36 @@ class _AiChatSheetState extends State<_AiChatSheet> {
       );
     });
     _loadCourseContext(course);
+    _persistSession();
+  }
+
+  void _persistSession() {
+    if (_selectedCourse == null) return;
+    _history.saveSession(
+      ChatSession(
+        id: _sessionId,
+        courseId: _selectedCourse!.id,
+        courseTitle: _selectedCourse!.title,
+        messages: List.of(_messages),
+        lastUpdated: DateTime.now(),
+      ),
+    );
+  }
+
+  Future<void> _resumeSession(ChatSession session) async {
+    setState(() {
+      _sessionId = session.id;
+      _selectedCourse = AiCourse(
+        id: session.courseId,
+        title: session.courseTitle,
+        slug: '',
+      );
+      _messages
+        ..clear()
+        ..addAll(session.messages);
+      _phase = _ChatPhase.chatting;
+    });
+    await _loadCourseContext(_selectedCourse!);
   }
 
   Future<void> _loadCourseContext(AiCourse course) async {
@@ -292,8 +336,10 @@ class _AiChatSheetState extends State<_AiChatSheet> {
           mergedMediaMap.addAll(text.mediaMap);
           if (buffer.length > 20000) break;
         }
-        final trimmedContext =
-            buffer.toString().substring(0, buffer.length.clamp(0, 20000));
+        final trimmedContext = buffer.toString().substring(
+          0,
+          buffer.length.clamp(0, 20000),
+        );
         final referencedKeys = extractMediaKeys(trimmedContext);
         final descriptions = referencedKeys.isEmpty
             ? <String, String>{}
@@ -317,12 +363,14 @@ class _AiChatSheetState extends State<_AiChatSheet> {
     if (!_courseIsIndexed) return _courseContext;
 
     final rows = await MatrixScope.of(context).api.callMatchCourseChunks(
-          courseId: _selectedCourse!.id,
-          embedding: questionEmbedding,
-          count: 5,
-        );
+      courseId: _selectedCourse!.id,
+      embedding: questionEmbedding,
+      count: 5,
+    );
     if (rows.isEmpty) return '';
-    return rows.map((r) => r['chunk_text']?.toString() ?? '').join('\n\n---\n\n');
+    return rows
+        .map((r) => r['chunk_text']?.toString() ?? '')
+        .join('\n\n---\n\n');
   }
 
   @override
@@ -371,6 +419,14 @@ class _AiChatSheetState extends State<_AiChatSheet> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
+          IconButton(
+            icon: const Icon(Icons.menu),
+            onPressed: _showHistoryMenu,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            iconSize: 22,
+          ),
+          const SizedBox(width: 8),
           const Icon(Icons.auto_awesome, size: 20, color: Color(0xFF18664B)),
           const SizedBox(width: 8),
           Expanded(
@@ -430,10 +486,7 @@ class _AiChatSheetState extends State<_AiChatSheet> {
     }
     return Padding(
       padding: const EdgeInsets.all(16),
-      child: CoursePicker(
-        courses: _courses,
-        onSelected: _onCourseSelected,
-      ),
+      child: CoursePicker(courses: _courses, onSelected: _onCourseSelected),
     );
   }
 
@@ -449,9 +502,12 @@ class _AiChatSheetState extends State<_AiChatSheet> {
   Widget _buildBubble(ChatMessage m) {
     if (m.isLoading) return _LoadingBubble();
     if (m.isError) {
-      return _ErrorBubble(
-        message: m.content,
-        onRetry: _onRetryLastMessage,
+      return _ErrorBubble(message: m.content, onRetry: _onRetryLastMessage);
+    }
+    if (m.isQuiz) {
+      return _QuizBubble(
+        message: m,
+        onSubmit: (answer) => _onQuizSubmit(m, answer),
       );
     }
     if (m.isConfirm) {
@@ -477,12 +533,14 @@ class _AiChatSheetState extends State<_AiChatSheet> {
   }
 
   bool _wasAnswerAlreadyShown(String answer) {
-    return _messages.any((m) =>
-        m.role == ChatRole.assistant &&
-        !m.isLoading &&
-        !m.isError &&
-        !m.isConfirm &&
-        m.content == answer);
+    return _messages.any(
+      (m) =>
+          m.role == ChatRole.assistant &&
+          !m.isLoading &&
+          !m.isError &&
+          !m.isConfirm &&
+          m.content == answer,
+    );
   }
 
   Future<void> _onSend(String question) async {
@@ -492,8 +550,21 @@ class _AiChatSheetState extends State<_AiChatSheet> {
 
     setState(() {
       _isSending = true;
-      _messages.add(ChatMessage(role: ChatRole.user, content: trimmed, timestamp: DateTime.now()));
-      _messages.add(ChatMessage(role: ChatRole.assistant, content: '', timestamp: DateTime.now(), isLoading: true));
+      _messages.add(
+        ChatMessage(
+          role: ChatRole.user,
+          content: trimmed,
+          timestamp: DateTime.now(),
+        ),
+      );
+      _messages.add(
+        ChatMessage(
+          role: ChatRole.assistant,
+          content: '',
+          timestamp: DateTime.now(),
+          isLoading: true,
+        ),
+      );
     });
     _scrollToBottom();
 
@@ -511,12 +582,17 @@ class _AiChatSheetState extends State<_AiChatSheet> {
           if (_wasAnswerAlreadyShown(entry.answer)) {
             // Same answer already shown in this conversation — force a
             // fresh Gemini call instead of repeating it verbatim.
-            final retrievedContext = await _buildRetrievedContext(questionEmbedding);
+            final retrievedContext = await _buildRetrievedContext(
+              questionEmbedding,
+            );
             final answer = await _chatApi.sendMessage(
               courseTitle: _selectedCourse!.title,
               courseContext: retrievedContext,
-              history: _messages.where((m) => !m.isLoading && !m.isError && !m.isConfirm).toList(),
-              question: '$trimmed\n\n(Note: I asked something very similar '
+              history: _messages
+                  .where((m) => !m.isLoading && !m.isError && !m.isConfirm)
+                  .toList(),
+              question:
+                  '$trimmed\n\n(Note: I asked something very similar '
                   'earlier in this chat and already have that answer — '
                   'please explain it differently, e.g. with a new example '
                   'or a different angle, rather than repeating the same '
@@ -525,12 +601,29 @@ class _AiChatSheetState extends State<_AiChatSheet> {
             );
             if (!mounted) return;
             setState(() {
-              _messages.add(ChatMessage(role: ChatRole.assistant, content: answer, timestamp: DateTime.now()));
+              _messages.add(
+                ChatMessage(
+                  role: ChatRole.assistant,
+                  content: answer,
+                  timestamp: DateTime.now(),
+                ),
+              );
             });
-            await _cacheService.save(_selectedCourse!.id, trimmed, answer, bypassDedupGuard: true);
+            await _cacheService.save(
+              _selectedCourse!.id,
+              trimmed,
+              answer,
+              bypassDedupGuard: true,
+            );
           } else {
             setState(() {
-              _messages.add(ChatMessage(role: ChatRole.assistant, content: entry.answer, timestamp: DateTime.now()));
+              _messages.add(
+                ChatMessage(
+                  role: ChatRole.assistant,
+                  content: entry.answer,
+                  timestamp: DateTime.now(),
+                ),
+              );
             });
             await _cacheService.incrementHit(entry.id);
           }
@@ -539,12 +632,17 @@ class _AiChatSheetState extends State<_AiChatSheet> {
           if (_wasAnswerAlreadyShown(best.answer)) {
             // Would just confirm into a repeat — skip the "Did you mean?"
             // step entirely and get a fresh, differently-angled answer.
-            final retrievedContext = await _buildRetrievedContext(questionEmbedding);
+            final retrievedContext = await _buildRetrievedContext(
+              questionEmbedding,
+            );
             final answer = await _chatApi.sendMessage(
               courseTitle: _selectedCourse!.title,
               courseContext: retrievedContext,
-              history: _messages.where((m) => !m.isLoading && !m.isError && !m.isConfirm).toList(),
-              question: '$trimmed\n\n(Note: I asked something very similar '
+              history: _messages
+                  .where((m) => !m.isLoading && !m.isError && !m.isConfirm)
+                  .toList(),
+              question:
+                  '$trimmed\n\n(Note: I asked something very similar '
                   'earlier in this chat and already have that answer — '
                   'please explain it differently, e.g. with a new example '
                   'or a different angle, rather than repeating the same '
@@ -553,37 +651,65 @@ class _AiChatSheetState extends State<_AiChatSheet> {
             );
             if (!mounted) return;
             setState(() {
-              _messages.add(ChatMessage(role: ChatRole.assistant, content: answer, timestamp: DateTime.now()));
+              _messages.add(
+                ChatMessage(
+                  role: ChatRole.assistant,
+                  content: answer,
+                  timestamp: DateTime.now(),
+                ),
+              );
             });
-            await _cacheService.save(_selectedCourse!.id, trimmed, answer, bypassDedupGuard: true);
+            await _cacheService.save(
+              _selectedCourse!.id,
+              trimmed,
+              answer,
+              bypassDedupGuard: true,
+            );
           } else {
             _pendingSimilar = best;
             _pendingQuestion = trimmed;
             setState(() {
-              _messages.add(ChatMessage(
-                role: ChatRole.assistant,
-                content: best.question,
-                timestamp: DateTime.now(),
-                isConfirm: true,
-              ));
+              _messages.add(
+                ChatMessage(
+                  role: ChatRole.assistant,
+                  content: best.question,
+                  timestamp: DateTime.now(),
+                  isConfirm: true,
+                ),
+              );
               _phase = _ChatPhase.awaitingConfirm;
             });
-          }    
+          }
 
         case CacheMiss():
-          final retrievedContext = await _buildRetrievedContext(questionEmbedding);
+          final retrievedContext = await _buildRetrievedContext(
+            questionEmbedding,
+          );
           final answer = await _chatApi.sendMessage(
             courseTitle: _selectedCourse!.title,
             courseContext: retrievedContext,
-            history: _messages.where((m) => !m.isLoading && !m.isError && !m.isConfirm).toList(),
+            history: _messages
+                .where((m) => !m.isLoading && !m.isError && !m.isConfirm)
+                .toList(),
             question: trimmed,
             availableMedia: _availableMedia,
           );
           if (!mounted) return;
           setState(() {
-            _messages.add(ChatMessage(role: ChatRole.assistant, content: answer, timestamp: DateTime.now()));
+            _messages.add(
+              ChatMessage(
+                role: ChatRole.assistant,
+                content: answer,
+                timestamp: DateTime.now(),
+              ),
+            );
           });
           await _cacheService.save(_selectedCourse!.id, trimmed, answer);
+          _generateQuizFor(
+            originalQuestion: trimmed,
+            originalQuestionEmbedding: questionEmbedding,
+            answerText: answer,
+          );
       }
     } catch (e) {
       _lastFailedQuestion = trimmed;
@@ -592,16 +718,19 @@ class _AiChatSheetState extends State<_AiChatSheet> {
         if (_messages.isNotEmpty && _messages.last.isLoading) {
           _messages.removeLast();
         }
-        _messages.add(ChatMessage(
-          role: ChatRole.assistant,
-          content: e.toString(),
-          timestamp: DateTime.now(),
-          isError: true,
-        ));
+        _messages.add(
+          ChatMessage(
+            role: ChatRole.assistant,
+            content: e.toString(),
+            timestamp: DateTime.now(),
+            isError: true,
+          ),
+        );
       });
     } finally {
       if (mounted) setState(() => _isSending = false);
       _scrollToBottom();
+      _persistSession();
     }
   }
 
@@ -617,17 +746,20 @@ class _AiChatSheetState extends State<_AiChatSheet> {
     final id = _pendingSimilar!.id;
     setState(() {
       _messages.removeLast(); // remove isConfirm bubble
-      _messages.add(ChatMessage(
-        role: ChatRole.assistant,
-        content: answer,
-        timestamp: DateTime.now(),
-      ));
+      _messages.add(
+        ChatMessage(
+          role: ChatRole.assistant,
+          content: answer,
+          timestamp: DateTime.now(),
+        ),
+      );
       _phase = _ChatPhase.chatting;
       _pendingSimilar = null;
       _pendingQuestion = '';
     });
     _cacheService.incrementHit(id);
     _scrollToBottom();
+    _persistSession();
   }
 
   Future<void> _onConfirmNo() async {
@@ -652,8 +784,21 @@ class _AiChatSheetState extends State<_AiChatSheet> {
 
     setState(() {
       _isSending = true;
-      _messages.add(ChatMessage(role: ChatRole.user, content: trimmed, timestamp: DateTime.now()));
-      _messages.add(ChatMessage(role: ChatRole.assistant, content: '', timestamp: DateTime.now(), isLoading: true));
+      _messages.add(
+        ChatMessage(
+          role: ChatRole.user,
+          content: trimmed,
+          timestamp: DateTime.now(),
+        ),
+      );
+      _messages.add(
+        ChatMessage(
+          role: ChatRole.assistant,
+          content: '',
+          timestamp: DateTime.now(),
+          isLoading: true,
+        ),
+      );
     });
     _scrollToBottom();
 
@@ -663,32 +808,158 @@ class _AiChatSheetState extends State<_AiChatSheet> {
       final answer = await _chatApi.sendMessage(
         courseTitle: _selectedCourse!.title,
         courseContext: retrievedContext,
-        history: _messages.where((m) => !m.isLoading && !m.isError && !m.isConfirm).toList(),
+        history: _messages
+            .where((m) => !m.isLoading && !m.isError && !m.isConfirm)
+            .toList(),
         question: trimmed,
         availableMedia: _availableMedia,
       );
       if (!mounted) return;
       setState(() {
         _messages.removeLast(); // remove loading bubble
-        _messages.add(ChatMessage(role: ChatRole.assistant, content: answer, timestamp: DateTime.now()));
+        _messages.add(
+          ChatMessage(
+            role: ChatRole.assistant,
+            content: answer,
+            timestamp: DateTime.now(),
+          ),
+        );
       });
       await _cacheService.save(_selectedCourse!.id, trimmed, answer);
     } catch (e) {
       _lastFailedQuestion = trimmed;
       if (!mounted) return;
       setState(() {
-        if (_messages.isNotEmpty && _messages.last.isLoading) _messages.removeLast();
-        _messages.add(ChatMessage(
-          role: ChatRole.assistant,
-          content: e.toString(),
-          timestamp: DateTime.now(),
-          isError: true,
-        ));
+        if (_messages.isNotEmpty && _messages.last.isLoading)
+          _messages.removeLast();
+        _messages.add(
+          ChatMessage(
+            role: ChatRole.assistant,
+            content: e.toString(),
+            timestamp: DateTime.now(),
+            isError: true,
+          ),
+        );
       });
     } finally {
       if (mounted) setState(() => _isSending = false);
       _scrollToBottom();
+      _persistSession();
     }
+  }
+
+  Future<void> _generateQuizFor({
+    required String originalQuestion,
+    required List<double> originalQuestionEmbedding,
+    required String answerText,
+  }) async {
+    if (_selectedCourse == null) return;
+    try {
+      final quiz = await _quizService.getQuizQuestion(
+        courseId: _selectedCourse!.id,
+        courseTitle: _selectedCourse!.title,
+        courseContext: _courseContext,
+        originalQuestion: originalQuestion,
+        originalQuestionEmbedding: originalQuestionEmbedding,
+        answerText: answerText,
+      );
+      if (quiz == null || !mounted) return;
+      setState(() {
+        _messages.add(
+          ChatMessage(
+            role: ChatRole.assistant,
+            content: quiz.question,
+            timestamp: DateTime.now(),
+            isQuiz: true,
+            quizCorrectAnswer: quiz.correctAnswer,
+          ),
+        );
+      });
+      _scrollToBottom();
+    } catch (e) {
+      debugPrint('[AiChatSheet] Quiz generation failed (non-fatal): $e');
+    }
+  }
+
+  Future<void> _onQuizSubmit(
+    ChatMessage quizMessage,
+    String studentAnswer,
+  ) async {
+    if (quizMessage.quizCorrectAnswer == null) return;
+    try {
+      final result = await _quizService.validateAnswer(
+        studentAnswer: studentAnswer,
+        correctAnswer: quizMessage.quizCorrectAnswer!,
+      );
+      if (!mounted) return;
+      setState(() {
+        final index = _messages.indexOf(quizMessage);
+        if (index != -1) {
+          _messages[index] = quizMessage.copyWith(quizResult: result);
+        }
+      });
+      _persistSession();
+    } catch (e) {
+      debugPrint('[AiChatSheet] Quiz validation failed: $e');
+    }
+  }
+
+  Future<void> _showHistoryMenu() async {
+    final sessions = await _history.loadAll();
+    if (!mounted) return;
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        expand: false,
+        builder: (context, scrollController) {
+          if (sessions.isEmpty) {
+            return const Center(child: Text('No past conversations yet.'));
+          }
+          return ListView.separated(
+            controller: scrollController,
+            padding: const EdgeInsets.all(16),
+            itemCount: sessions.length,
+            separatorBuilder: (_, __) => const Divider(),
+            itemBuilder: (context, index) {
+              final s = sessions[index];
+              final firstUserMessage = s.messages.firstWhere(
+                (m) => m.role == ChatRole.user,
+                orElse: () => ChatMessage(
+                  role: ChatRole.user,
+                  content: 'New conversation',
+                  timestamp: s.lastUpdated,
+                ),
+              );
+              return ListTile(
+                title: Text(
+                  firstUserMessage.content,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  s.courseTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 20),
+                  onPressed: () async {
+                    await _history.deleteSession(s.id);
+                    if (context.mounted) Navigator.of(context).pop();
+                  },
+                ),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _resumeSession(s);
+                },
+              );
+            },
+          );
+        },
+      ),
+    );
   }
 
   Widget _buildInputRow() {
@@ -772,14 +1043,18 @@ class _AssistantBubble extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.auto_awesome, size: 16, color: Color(0xFF18664B)),
+              const Icon(
+                Icons.auto_awesome,
+                size: 16,
+                color: Color(0xFF18664B),
+              ),
               const SizedBox(width: 6),
               Text(
                 'AI Tutor',
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: const Color(0xFF18664B),
-                      fontWeight: FontWeight.w600,
-                    ),
+                  color: const Color(0xFF18664B),
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ],
           ),
@@ -834,7 +1109,10 @@ class _LoadingBubbleState extends State<_LoadingBubble>
               mainAxisSize: MainAxisSize.min,
               children: List.generate(3, (i) {
                 final t = (_controller.value - i * 0.2) % 1.0;
-                final opacity = (0.3 + 0.7 * (1 - (t - 0.5).abs() * 2)).clamp(0.3, 1.0);
+                final opacity = (0.3 + 0.7 * (1 - (t - 0.5).abs() * 2)).clamp(
+                  0.3,
+                  1.0,
+                );
                 return Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 2),
                   child: Opacity(
@@ -941,7 +1219,10 @@ class _ConfirmBubble extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Did you mean:', style: TextStyle(fontSize: 12, color: Colors.amber.shade900)),
+            Text(
+              'Did you mean:',
+              style: TextStyle(fontSize: 12, color: Colors.amber.shade900),
+            ),
             const SizedBox(height: 4),
             Text(
               '"$originalQuestion"',
@@ -950,10 +1231,7 @@ class _ConfirmBubble extends StatelessWidget {
             const SizedBox(height: 10),
             Row(
               children: [
-                TextButton(
-                  onPressed: onYes,
-                  child: const Text('Yes'),
-                ),
+                TextButton(onPressed: onYes, child: const Text('Yes')),
                 const SizedBox(width: 8),
                 TextButton(
                   onPressed: onNo,
@@ -963,6 +1241,126 @@ class _ConfirmBubble extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _QuizBubble extends StatefulWidget {
+  const _QuizBubble({required this.message, required this.onSubmit});
+  final ChatMessage message;
+  final void Function(String studentAnswer) onSubmit;
+
+  @override
+  State<_QuizBubble> createState() => _QuizBubbleState();
+}
+
+class _QuizBubbleState extends State<_QuizBubble> {
+  final TextEditingController _answerCtrl = TextEditingController();
+  bool _submitting = false;
+
+  @override
+  void dispose() {
+    _answerCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final result = widget.message.quizResult;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        border: Border.all(color: Colors.blue.shade200),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.quiz_outlined, size: 16, color: Colors.blue.shade700),
+              const SizedBox(width: 6),
+              Text(
+                'Quick check',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.blue.shade900,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(widget.message.content),
+          const SizedBox(height: 10),
+          if (result == null) ...[
+            TextField(
+              controller: _answerCtrl,
+              enabled: !_submitting,
+              decoration: const InputDecoration(
+                hintText: 'Your answer...',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                FilledButton(
+                  onPressed: _submitting || _answerCtrl.text.trim().isEmpty
+                      ? null
+                      : () {
+                          setState(() => _submitting = true);
+                          widget.onSubmit(_answerCtrl.text.trim());
+                        },
+                  child: _submitting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Submit'),
+                ),
+              ],
+            ),
+          ] else ...[
+            Row(
+              children: [
+                Icon(
+                  result.result == ValidationResult.correct
+                      ? Icons.check_circle
+                      : Icons.cancel,
+                  color: result.result == ValidationResult.correct
+                      ? Colors.green
+                      : Colors.orange,
+                  size: 18,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  result.result == ValidationResult.correct
+                      ? 'Correct!'
+                      : 'Not quite',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: result.result == ValidationResult.correct
+                        ? Colors.green.shade700
+                        : Colors.orange.shade700,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Correct answer: ${result.correctAnswer}',
+              style: const TextStyle(fontSize: 13),
+            ),
+          ],
+        ],
       ),
     );
   }

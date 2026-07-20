@@ -167,6 +167,68 @@ class GeminiChatApi {
     return text;
   }
 
+  /// Generates one comprehension-check question (and its correct answer)
+  /// testing understanding of [answerText], grounded in [courseContext].
+  /// Returns null if parsing fails (caller should treat as "skip quiz
+  /// this time" rather than erroring the whole chat flow).
+  Future<QuizQuestion?> generateQuizQuestion({
+    required String courseTitle,
+    required String courseContext,
+    required String answerText,
+  }) async {
+    if (_geminiApiKey.isEmpty) return null;
+
+    final prompt =
+        'Based on this explanation given to a student studying '
+        '"$courseTitle":\n\n$answerText\n\n'
+        'Write ONE short comprehension-check question testing whether the '
+        'student understood this specific explanation. Then write the '
+        'correct answer to that question.\n'
+        'Respond in EXACTLY this format, nothing else:\n'
+        'QUESTION: <the question>\n'
+        'ANSWER: <the correct answer>';
+
+    try {
+      final uri = Uri.parse('$_baseUrl?key=$_geminiApiKey');
+      final request = await _client.postUrl(uri);
+      request.headers.contentType = ContentType.json;
+      request.write(jsonEncode({
+        'contents': [
+          {
+            'role': 'user',
+            'parts': [
+              {'text': prompt},
+            ],
+          },
+        ],
+      }));
+      final response = await request.close();
+      final body = await response.transform(utf8.decoder).join();
+      if (response.statusCode < 200 || response.statusCode >= 300) return null;
+
+      final data = jsonDecode(body) as Map<String, dynamic>;
+      final candidates = data['candidates'];
+      if (candidates is! List || candidates.isEmpty) return null;
+      final content = candidates.first['content'];
+      if (content is! Map<String, dynamic> || content['parts'] is! List) return null;
+      final text = (content['parts'] as List)
+          .map((p) => (p as Map<String, dynamic>)['text']?.toString() ?? '')
+          .join();
+
+      final qMatch = RegExp(r'QUESTION:\s*(.+?)(?=\nANSWER:|$)', dotAll: true).firstMatch(text);
+      final aMatch = RegExp(r'ANSWER:\s*(.+)$', dotAll: true).firstMatch(text);
+      if (qMatch == null || aMatch == null) return null;
+
+      final question = qMatch.group(1)!.trim();
+      final answer = aMatch.group(1)!.trim();
+      if (question.isEmpty || answer.isEmpty) return null;
+
+      return QuizQuestion(question: question, correctAnswer: answer);
+    } catch (e) {
+      return null;
+    }
+  }
+
   String _buildMediaSection(Map<String, String> availableMedia) {
     if (availableMedia.isEmpty) return '';
     final lines = availableMedia.entries

@@ -1,12 +1,34 @@
 enum ChatRole { user, assistant }
 
+enum ValidationResult { correct, incorrect }
+
+class QuizValidation {
+  const QuizValidation({
+    required this.result,
+    required this.correctAnswer,
+    required this.similarity,
+  });
+  final ValidationResult result;
+  final String correctAnswer;
+  final double similarity;
+}
+
+class QuizQuestion {
+  const QuizQuestion({required this.question, required this.correctAnswer});
+  final String question;
+  final String correctAnswer;
+}
+
 class ChatMessage {
   final ChatRole role;
   final String content;
   final DateTime timestamp;
-  final bool isLoading; // true = show animated typing indicator
-  final bool isError; // true = show error styling + retry button
-  final bool isConfirm; // true = show "Did you mean?" bubble with Yes/No
+  final bool isLoading;
+  final bool isError;
+  final bool isConfirm;
+  final bool isQuiz;              // true = show quiz question + answer input
+  final String? quizCorrectAnswer; // hidden from UI until validated
+  final QuizValidation? quizResult; // null until student submits an answer
 
   const ChatMessage({
     required this.role,
@@ -15,7 +37,22 @@ class ChatMessage {
     this.isLoading = false,
     this.isError = false,
     this.isConfirm = false,
+    this.isQuiz = false,
+    this.quizCorrectAnswer,
+    this.quizResult,
   });
+
+  ChatMessage copyWith({QuizValidation? quizResult}) => ChatMessage(
+        role: role,
+        content: content,
+        timestamp: timestamp,
+        isLoading: isLoading,
+        isError: isError,
+        isConfirm: isConfirm,
+        isQuiz: isQuiz,
+        quizCorrectAnswer: quizCorrectAnswer,
+        quizResult: quizResult ?? this.quizResult,
+      );
 }
 
 class AiCourse {

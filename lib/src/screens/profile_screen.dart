@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import '../models/models.dart';
 import '../app.dart'; // For MatrixScope
 import '../widgets/shared_widgets.dart';
@@ -309,22 +308,28 @@ print("code block test")
 
   Future<void> _googleSignIn(BuildContext context) async {
     final scope = MatrixScope.of(context);
-    final oauthUrl = scope.api.getGoogleOAuthUrl('matrixfauth://callback');
     try {
-      final result = await FlutterWebAuth2.authenticate(
-        url: oauthUrl,
-        callbackUrlScheme: 'matrixfauth',
-      );
-      final callbackUri = Uri.parse(result);
-      final ok = await scope.api.handleOAuthCallback(callbackUri);
-      if (ok) {
-        await scope.refreshProfile();
-      } else if (context.mounted) {
-        showSnack(context, 'Google sign-in failed. Please try again.');
+      final account = await GoogleSignIn.instance.authenticate();
+      final idToken = account.authentication.idToken;
+      if (idToken == null) {
+        if (context.mounted) {
+          showSnack(context, 'Google sign-in did not return a token. Please try again.');
+        }
+        return;
+      }
+      await scope.api.signInWithGoogleIdToken(idToken);
+      await scope.refreshProfile();
+    } on GoogleSignInException catch (e) {
+      if (context.mounted) {
+        if (e.code == GoogleSignInExceptionCode.canceled) {
+          // User dismissed the picker — no error needed.
+          return;
+        }
+        showSnack(context, 'Google sign-in failed: ${e.description ?? e.code}');
       }
     } catch (e) {
       if (context.mounted) {
-        showSnack(context, 'Google sign-in was cancelled or failed.');
+        showSnack(context, 'Google sign-in failed: $e');
       }
     }
   }
