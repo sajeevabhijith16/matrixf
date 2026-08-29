@@ -116,12 +116,12 @@ class _AiFabState extends State<_AiFab> with TickerProviderStateMixin {
 
 /// Opens the AI chat sheet. Call this from anywhere with a BuildContext
 /// (the FAB, or later, ReaderScreen's AppBar icon in Module 9).
-void openAiChatSheet(BuildContext context, {AiCourse? initialCourse}) {
+void openAiChatSheet(BuildContext context, {AiCourse? initialCourse, String? initialModuleId}) {
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (_) => _AiChatSheet(initialCourse: initialCourse),
+    builder: (_) => _AiChatSheet(initialCourse: initialCourse, initialModuleId: initialModuleId),
   );
 }
 
@@ -132,8 +132,9 @@ enum _ChatPhase {
 }
 
 class _AiChatSheet extends StatefulWidget {
-  const _AiChatSheet({this.initialCourse});
+  const _AiChatSheet({this.initialCourse, this.initialModuleId});
   final AiCourse? initialCourse;
+  final String? initialModuleId;
 
   @override
   State<_AiChatSheet> createState() => _AiChatSheetState();
@@ -145,6 +146,22 @@ class _AiChatSheetState extends State<_AiChatSheet> {
   final List<ChatMessage> _messages = [];
   final TextEditingController _inputCtrl = TextEditingController();
   final ScrollController _scrollCtrl = ScrollController();
+
+  String? _currentModuleId;
+  final Map<String, List<ModuleQa>> _qaByModule = {};
+  List<ModuleQa> get _allQaPool => _qaByModule.values.expand((l) => l).toList();
+  List<ModuleQa> get _revisionPool {
+    if (_currentModuleId != null && _qaByModule.containsKey(_currentModuleId)) {
+      return _qaByModule[_currentModuleId!] ?? [];
+    }
+    return _allQaPool;
+  }
+
+  bool _revisionMode = false;
+  List<ModuleQa> _revisionRemaining = [];
+  List<ModuleQa> _revisionRetryQueue = [];
+  int _revisionCorrectCount = 0;
+  int _revisionTotalAnswered = 0;
 
   final LocalChatHistory _history = LocalChatHistory();
   late String _sessionId;
@@ -173,6 +190,7 @@ class _AiChatSheetState extends State<_AiChatSheet> {
   void initState() {
     super.initState();
     _sessionId = DateTime.now().millisecondsSinceEpoch.toString();
+    _currentModuleId = widget.initialModuleId;
     if (widget.initialCourse != null) {
       _selectedCourse = widget.initialCourse;
       _phase = _ChatPhase.chatting;
@@ -313,16 +331,29 @@ class _AiChatSheetState extends State<_AiChatSheet> {
         for (final m in modules) {
           final text = await api.getModuleText(m.id);
           mergedMediaMap.addAll(text.mediaMap);
+          _qaByModule[m.id] = text.questions.where((q) => q.embedding != null).toList();
           allText.write(text.content);
         }
-        final referencedKeys = extractMediaKeys(allText.toString());
-        final descriptions = referencedKeys.isEmpty
+        final tokenMap = extractMediaTokensWithDescriptions(allText.toString());
+        final referencedKeys = tokenMap.keys.toList();
+        final dbDescriptions = referencedKeys.isEmpty
             ? <String, String>{}
-            : await api.getImageDescriptions(referencedKeys.toList());
+            : await api.getImageDescriptions(referencedKeys);
+
+        final mergedDescriptions = <String, String>{};
+        for (final key in referencedKeys) {
+          final dbDesc = dbDescriptions[key];
+          final inlineDesc = tokenMap[key];
+          if (dbDesc != null && dbDesc.trim().isNotEmpty) {
+            mergedDescriptions[key] = dbDesc;
+          } else if (inlineDesc != null && inlineDesc.trim().isNotEmpty) {
+            mergedDescriptions[key] = inlineDesc;
+          }
+        }
         if (!mounted) return;
         setState(() {
           _courseMediaMap = mergedMediaMap;
-          _availableMedia = descriptions;
+          _availableMedia = mergedDescriptions;
         });
       } else {
         // Fallback: course not yet reindexed — use the old bulk-context
@@ -334,21 +365,34 @@ class _AiChatSheetState extends State<_AiChatSheet> {
           final text = await api.getModuleText(m.id);
           buffer.write('${m.title}\n${text.content}\n\n');
           mergedMediaMap.addAll(text.mediaMap);
+          _qaByModule[m.id] = text.questions.where((q) => q.embedding != null).toList();
           if (buffer.length > 20000) break;
         }
         final trimmedContext = buffer.toString().substring(
           0,
           buffer.length.clamp(0, 20000),
         );
-        final referencedKeys = extractMediaKeys(trimmedContext);
-        final descriptions = referencedKeys.isEmpty
+        final tokenMap = extractMediaTokensWithDescriptions(trimmedContext);
+        final referencedKeys = tokenMap.keys.toList();
+        final dbDescriptions = referencedKeys.isEmpty
             ? <String, String>{}
-            : await api.getImageDescriptions(referencedKeys.toList());
+            : await api.getImageDescriptions(referencedKeys);
+
+        final mergedDescriptions = <String, String>{};
+        for (final key in referencedKeys) {
+          final dbDesc = dbDescriptions[key];
+          final inlineDesc = tokenMap[key];
+          if (dbDesc != null && dbDesc.trim().isNotEmpty) {
+            mergedDescriptions[key] = dbDesc;
+          } else if (inlineDesc != null && inlineDesc.trim().isNotEmpty) {
+            mergedDescriptions[key] = inlineDesc;
+          }
+        }
         if (!mounted) return;
         setState(() {
           _courseContext = trimmedContext;
           _courseMediaMap = mergedMediaMap;
-          _availableMedia = descriptions;
+          _availableMedia = mergedDescriptions;
         });
       }
     } catch (e) {
@@ -422,6 +466,17 @@ class _AiChatSheetState extends State<_AiChatSheet> {
           IconButton(
             icon: const Icon(Icons.menu),
             onPressed: _showHistoryMenu,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            iconSize: 22,
+          ),
+          const SizedBox(width: 4),
+          IconButton(
+            icon: Icon(_revisionMode ? Icons.school : Icons.school_outlined),
+            tooltip: _revisionMode ? 'Exit Revision Mode' : 'Start Revision Mode',
+            onPressed: _phase == _ChatPhase.chatting
+                ? () => _revisionMode ? _endRevisionMode() : _startRevisionMode()
+                : null,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
             iconSize: 22,
@@ -881,24 +936,99 @@ class _AiChatSheetState extends State<_AiChatSheet> {
     }
   }
 
-  Future<void> _onQuizSubmit(
-    ChatMessage quizMessage,
-    String studentAnswer,
-  ) async {
+  void _startRevisionMode() {
+    if (_revisionPool.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No revision questions available yet for this course.')),
+      );
+      return;
+    }
+    setState(() {
+      _revisionMode = true;
+      _revisionRemaining = List.of(_revisionPool)..shuffle();
+      _revisionRetryQueue = [];
+      _revisionCorrectCount = 0;
+      _revisionTotalAnswered = 0;
+    });
+    _nextRevisionQuestion();
+  }
+
+  void _nextRevisionQuestion() {
+    if (_revisionRemaining.isEmpty && _revisionRetryQueue.isNotEmpty) {
+      _revisionRemaining = List.of(_revisionRetryQueue)..shuffle();
+      _revisionRetryQueue = [];
+    }
+    if (_revisionRemaining.isEmpty) {
+      _endRevisionMode();
+      return;
+    }
+    final next = _revisionRemaining.removeAt(0);
+    setState(() {
+      _messages.add(ChatMessage(
+        role: ChatRole.assistant,
+        content: next.question,
+        timestamp: DateTime.now(),
+        isQuiz: true,
+        isRevisionQuestion: true,
+        quizCorrectAnswer: next.answer,
+      ));
+    });
+    _scrollToBottom();
+  }
+
+  void _endRevisionMode() {
+    final total = _revisionTotalAnswered;
+    final correct = _revisionCorrectCount;
+    setState(() {
+      _revisionMode = false;
+      _messages.add(ChatMessage(
+        role: ChatRole.assistant,
+        content: total == 0
+            ? 'Revision session ended.'
+            : 'Revision complete! You got $correct/$total correct.',
+        timestamp: DateTime.now(),
+      ));
+    });
+    _scrollToBottom();
+  }
+
+  Future<void> _onQuizSubmit(ChatMessage quizMessage, String studentAnswer) async {
     if (quizMessage.quizCorrectAnswer == null) return;
     try {
+      List<double>? correctEmbedding;
+      if (quizMessage.isRevisionQuestion) {
+        // Find the original ModuleQa to get its cached embedding.
+        final match = _allQaPool.where((q) => q.answer == quizMessage.quizCorrectAnswer);
+        if (match.isNotEmpty) correctEmbedding = match.first.embedding;
+      }
+
       final result = await _quizService.validateAnswer(
         studentAnswer: studentAnswer,
         correctAnswer: quizMessage.quizCorrectAnswer!,
+        correctAnswerEmbedding: correctEmbedding,
       );
       if (!mounted) return;
+
       setState(() {
         final index = _messages.indexOf(quizMessage);
         if (index != -1) {
           _messages[index] = quizMessage.copyWith(quizResult: result);
         }
       });
-      _persistSession();
+
+      if (quizMessage.isRevisionQuestion) {
+        _revisionTotalAnswered++;
+        if (result.result == ValidationResult.correct) {
+          _revisionCorrectCount++;
+        } else {
+          // Find the original ModuleQa to requeue it.
+          final match = _allQaPool.where((q) => q.question == quizMessage.content);
+          if (match.isNotEmpty) _revisionRetryQueue.add(match.first);
+        }
+        // Brief pause so the student can see the result before advancing.
+        await Future.delayed(const Duration(seconds: 2));
+        if (mounted && _revisionMode) _nextRevisionQuestion();
+      }
     } catch (e) {
       debugPrint('[AiChatSheet] Quiz validation failed: $e');
     }
@@ -963,7 +1093,7 @@ class _AiChatSheetState extends State<_AiChatSheet> {
   }
 
   Widget _buildInputRow() {
-    final canSend = _phase == _ChatPhase.chatting && !_isSending;
+    final canSend = _phase == _ChatPhase.chatting && !_isSending && !_revisionMode;
     return Padding(
       padding: const EdgeInsets.all(12),
       child: Row(

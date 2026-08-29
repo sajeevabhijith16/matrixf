@@ -46,7 +46,8 @@ class TableBlock extends Block {
 
 class MediaBlock extends Block {
   final String key;
-  MediaBlock(this.key);
+  final String? description; // inline-authored description, if any
+  MediaBlock(this.key, [this.description]);
 }
 
 bool isTableSeparator(String line) {
@@ -113,12 +114,15 @@ List<Block> parseBlocks(String src) {
     }
 
     // Standalone media token => block image
+    // Supports both [IMG: key] and [IMG: key(description)]
     final mediaMatch = RegExp(
-      r'^\s*\[(?:IMG|GIF):\s*([^\]]+)\]\s*$',
+      r'^\s*\[(?:IMG|GIF):\s*([^\(\)\]]+?)\s*(?:\(([^)]*)\))?\s*\]\s*$',
       caseSensitive: false,
     ).firstMatch(line);
     if (mediaMatch != null) {
-      out.add(MediaBlock(mediaMatch.group(1)!.trim()));
+      final key = mediaMatch.group(1)!.trim();
+      final description = mediaMatch.group(2)?.trim();
+      out.add(MediaBlock(key, (description != null && description.isNotEmpty) ? description : null));
       i++;
       continue;
     }
@@ -244,16 +248,27 @@ List<Block> parseBlocks(String src) {
   return out;
 }
 
-/// Scans [content] for [IMG: key] / [GIF: key] tokens (both standalone-line
-/// and inline forms) and returns the unique set of keys referenced.
-/// Used to find which course images are relevant to offer the AI as
-/// available media for a given course's chat context.
-Set<String> extractMediaKeys(String content) {
-  final regex = RegExp(r'\[(?:IMG|GIF):\s*([^\]]+)\]', caseSensitive: false);
-  final keys = <String>{};
+/// Scans [content] for [IMG: key] / [IMG: key(description)] tokens and
+/// returns a map of key -> inline description (null if none was given
+/// inline). Keys are deduplicated; the first occurrence's description wins
+/// if the same key appears multiple times with different inline text.
+Map<String, String?> extractMediaTokensWithDescriptions(String content) {
+  final regex = RegExp(
+    r'\[(?:IMG|GIF):\s*([^\(\)\]]+?)\s*(?:\(([^)]*)\))?\s*\]',
+    caseSensitive: false,
+  );
+  final result = <String, String?>{};
   for (final match in regex.allMatches(content)) {
     final key = match.group(1)?.trim();
-    if (key != null && key.isNotEmpty) keys.add(key);
+    if (key == null || key.isEmpty) continue;
+    if (result.containsKey(key)) continue; // first occurrence wins
+    final description = match.group(2)?.trim();
+    result[key] = (description != null && description.isNotEmpty) ? description : null;
   }
-  return keys;
+  return result;
 }
+
+/// Backward-compatible: existing callers that only need the key set keep
+/// working unchanged.
+Set<String> extractMediaKeys(String content) =>
+    extractMediaTokensWithDescriptions(content).keys.toSet();

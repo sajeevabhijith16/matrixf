@@ -143,6 +143,7 @@ class ModuleQa {
     required this.answer,
     this.answerImages = const [],
     this.displayOrder = 0,
+    this.embedding,
   });
 
   factory ModuleQa.fromJson(Map<String, dynamic> json) => ModuleQa(
@@ -153,6 +154,7 @@ class ModuleQa {
         .map((e) => e.toString())
         .toList(),
     displayOrder: (json['display_order'] as num?)?.toInt() ?? 0,
+    embedding: _parseEmbedding(json['embedding']),
   );
 
   final String id;
@@ -160,6 +162,27 @@ class ModuleQa {
   final String answer;
   final List<String> answerImages;
   final int displayOrder;
+  final List<double>? embedding; // null if not yet computed (older rows)
+}
+
+/// PostgREST returns pgvector columns as a bracketed string like
+/// "[0.1,0.2,...]", not a native JSON array — this handles both that
+/// string form and, defensively, a real List in case that ever changes.
+List<double>? _parseEmbedding(dynamic raw) {
+  if (raw == null) return null;
+  if (raw is List) {
+    return raw.map((e) => (e as num).toDouble()).toList();
+  }
+  if (raw is String) {
+    final cleaned = raw.replaceAll('[', '').replaceAll(']', '').trim();
+    if (cleaned.isEmpty) return null;
+    try {
+      return cleaned.split(',').map((s) => double.parse(s.trim())).toList();
+    } catch (_) {
+      return null;
+    }
+  }
+  return null;
 }
 
 class ModuleTextVersion {

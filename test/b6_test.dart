@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matrixf/src/ai/gemini_chat_api.dart';
-import 'package:flutter/foundation.dart';
 
 void main() {
   test('GeminiChatApi returns image token when relevant', () async {

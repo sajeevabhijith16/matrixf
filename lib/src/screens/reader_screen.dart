@@ -6,6 +6,7 @@ import '../models/models.dart';
 import '../app.dart'; // For MatrixScope
 import '../widgets/shared_widgets.dart';
 import '../components/module_text_renderer.dart';
+import 'dart:async';
 
 // ─── Reader Screen ────────────────────────────────────────────────────────────
 
@@ -19,10 +20,12 @@ class ReaderScreen extends StatefulWidget {
 
 class _ReaderScreenState extends State<ReaderScreen> {
   late Future<ModuleText> _future;
+  bool _initialized = false;
+  List<Block>? _blocks;
 
   // ── Scroll / progress ──────────────────────────────────────────────────────
   final ScrollController _scrollController = ScrollController();
-  double _readPercent = 0.0;
+  final ValueNotifier<double> _readPercent = ValueNotifier(0.0);
   static const double _minSavedOffset = 50.0;
 
   // ── Shared-prefs key ───────────────────────────────────────────────────────
@@ -44,8 +47,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _future = MatrixScope.of(context).api.getModuleText(widget.moduleId);
-    _future.then((data) => _onDataLoaded(data));
+    if (!_initialized) {
+      _initialized = true;
+      _future = MatrixScope.of(context).api.getModuleText(widget.moduleId);
+      _future.then((data) {
+        if (mounted) _onDataLoaded(data);
+      });
+    }
   }
 
   @override
@@ -56,8 +64,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _saveProgress();
     _scrollController.dispose();
+    _readPercent.dispose();
     _searchCtrl.dispose();
     super.dispose();
   }
@@ -67,13 +77,14 @@ class _ReaderScreenState extends State<ReaderScreen> {
     final pos = _scrollController.position;
     if (pos.maxScrollExtent <= 0) return;
     final pct = (pos.pixels / pos.maxScrollExtent).clamp(0.0, 1.0);
-    if ((pct - _readPercent).abs() > 0.001) {
-      setState(() => _readPercent = pct);
+    if ((pct - _readPercent.value).abs() > 0.001) {
+      _readPercent.value = pct;
     }
   }
 
   // ── SharedPreferences helpers ──────────────────────────────────────────────
   Future<void> _onDataLoaded(ModuleText data) async {
+    _blocks = parseBlocks(data.content);
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getDouble(_prefKey) ?? 0.0;
     if (!mounted) return;
@@ -129,7 +140,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'You were ${(_readPercent * 100).toStringAsFixed(0)}% through this module.',
+                'You were ${(_readPercent.value * 100).toStringAsFixed(0)}% through this module.',
                 textAlign: TextAlign.center,
                 style: Theme.of(
                   ctx,
@@ -204,11 +215,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   // ── Search helpers ─────────────────────────────────────────────────────────
+  Timer? _searchDebounce;
+
   void _onSearchChanged(String query, ModuleText data) {
     final q = query.toLowerCase().trim();
     if (q == _searchQuery) return;
 
-    final blocks = parseBlocks(data.content);
+    final blocks = _blocks ?? parseBlocks(data.content);
     final refs = <_MatchRef>[];
 
     if (q.isNotEmpty) {
@@ -328,6 +341,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
         title: courseTitle,
         slug: '',
       ),
+      initialModuleId: data.module.id,
     );
   }
 
@@ -341,7 +355,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
         // ── Progress badge ────────────────────────────────────────────────
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: _ProgressBadge(percent: _readPercent),
+          child: ValueListenableBuilder<double>(
+            valueListenable: _readPercent,
+            builder: (context, percent, _) => _ProgressBadge(percent: percent),
+          ),
         ),
 
         // ── Search button ─────────────────────────────────────────────────
@@ -419,7 +436,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   borderSide: BorderSide.none,
                 ),
               ),
-              onChanged: (v) => _onSearchChanged(v, data),
+              onChanged: (v) {
+                _searchDebounce?.cancel();
+                _searchDebounce = Timer(const Duration(milliseconds: 150), () {
+                  if (mounted) _onSearchChanged(v, data);
+                });
+              },
               onSubmitted: (v) => _stepMatch(1),
             ),
           ),
@@ -490,14 +512,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
           style: Theme.of(context).textTheme.headlineSmall,
         ),
         const SizedBox(height: 16),
-        MatrixTextRenderer(
-          content: data.content,
+        if (_blocks == null) const Center(child: CircularProgressIndicator()) else
+        MatrixTextRenderer.fromBlocks(
+          blocks: _blocks!,
           mediaMap: data.mediaMap,
           searchQuery: _searchQuery,
           activeMatchIndex: _activeMatchIndex,
-          onBlockKeysReady: (keys) {
-            _blockKeys = keys;
-          },
+          onBlockKeysReady: (keys) => _blockKeys = keys,
         ),
       ],
     );

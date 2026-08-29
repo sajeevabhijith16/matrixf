@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'components/text_blocks.dart';
 import 'models/models.dart';
 import 'models/pending_image_token.dart';
+import 'ai/gemini_embedding_api.dart';
 
 const supabaseUrl = String.fromEnvironment(
   'SUPABASE_URL',
@@ -243,7 +244,7 @@ class MatrixApi {
       throw ApiException('This module has no text content yet.');
     }
     final qaRows = await _restGet('module_qa', {
-      'select': 'id,question,answer_text,answer_images,display_order',
+      'select': 'id,question,answer_text,answer_images,display_order,embedding',
       'module_id': 'eq.$moduleId',
       'order': 'display_order.asc',
     });
@@ -596,23 +597,29 @@ class MatrixApi {
     int displayOrder = 0,
   }) async {
     _requireSession();
+
+    // Compute the answer's embedding once, at save time, so it never needs
+    // to be recomputed across any student/session during Revision Mode.
+    // Non-fatal if it fails — the Q&A still saves, just without revision
+    // support until the next edit succeeds in embedding it.
+    List<double>? embedding;
+    try {
+      embedding = await GeminiEmbeddingApi().embed(answerText);
+    } catch (e) {
+      debugPrint('Failed to embed QA answer (non-fatal): $e');
+    }
+
+    final body = {
+      'question': question,
+      'answer_text': answerText,
+      'display_order': displayOrder,
+      if (embedding != null) 'embedding': embedding,
+    };
+
     if (id == null) {
-      await _restPost('module_qa', {
-        'module_id': moduleId,
-        'question': question,
-        'answer_text': answerText,
-        'display_order': displayOrder,
-      });
+      await _restPost('module_qa', {'module_id': moduleId, ...body});
     } else {
-      await _restPatch(
-        'module_qa',
-        {'id': 'eq.$id'},
-        {
-          'question': question,
-          'answer_text': answerText,
-          'display_order': displayOrder,
-        },
-      );
+      await _restPatch('module_qa', {'id': 'eq.$id'}, body);
     }
   }
 
@@ -754,8 +761,9 @@ class MatrixApi {
       final info = moduleInfo[moduleId];
       if (info == null) continue;
 
-      final keys = extractMediaKeys(content);
-      for (final key in keys) {
+      final tokenMap = extractMediaTokensWithDescriptions(content);
+      for (final entry in tokenMap.entries) {
+        final key = entry.key;
         final lower = key.toLowerCase();
         if (uploadedTokens.contains(lower)) continue;
         if (seen.contains(lower)) continue;
@@ -766,6 +774,7 @@ class MatrixApi {
           moduleTitle: info['title']!,
           courseId: info['course_id']!,
           courseTitle: courseTitleById[info['course_id']] ?? 'Unknown course',
+          inlineDescription: entry.value,
         ));
       }
     }

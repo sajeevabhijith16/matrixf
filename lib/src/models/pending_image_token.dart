@@ -7,6 +7,7 @@ class PendingImageToken {
     required this.moduleTitle,
     required this.courseId,
     required this.courseTitle,
+    this.inlineDescription,
   });
 
   final String token;
@@ -14,4 +15,5 @@ class PendingImageToken {
   final String moduleTitle;
   final String courseId;
   final String courseTitle;
+  final String? inlineDescription;
 }

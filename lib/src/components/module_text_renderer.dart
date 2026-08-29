@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import 'dart:io';
-import 'package:matrixf/src/models/models.dart';
 export 'text_blocks.dart';
 import 'text_blocks.dart';
 
@@ -46,56 +45,86 @@ List<_SearchMatch> _findAllMatches(List<Block> blocks, String query) {
 
 // ─── MatrixTextRenderer ───────────────────────────────────────────────────────
 
-class MatrixTextRenderer extends StatelessWidget {
-  final String content;
-  final Map<String, ModuleMedia> mediaMap;
-
-  /// When non-empty, matching text segments are highlighted.
-  final String searchQuery;
-
-  /// The index (into the full match list) that is currently active (orange highlight).
-  final int activeMatchIndex;
-
-  /// Called once after build with the list of GlobalKeys for each block widget.
-  /// The reader screen uses these to scroll to the active match.
-  final void Function(List<GlobalKey>)? onBlockKeysReady;
-
-  const MatrixTextRenderer({
+class MatrixTextRenderer extends StatefulWidget {
+  const MatrixTextRenderer.fromBlocks({
     super.key,
-    required this.content,
+    required List<Block> blocks,
+    required this.mediaMap,
+    required this.searchQuery,
+    required this.activeMatchIndex,
+    required this.onBlockKeysReady,
+  })  : blocks = blocks,
+        content = null;
+
+  const MatrixTextRenderer.fromContent({
+    super.key,
+    required String content,
     required this.mediaMap,
     this.searchQuery = '',
     this.activeMatchIndex = -1,
     this.onBlockKeysReady,
-  });
+  })  : content = content,
+        blocks = null;
+
+  final List<Block>? blocks;
+  final String? content;
+  final Map<String, dynamic> mediaMap;
+  final String searchQuery;
+  final int activeMatchIndex;
+  final ValueChanged<List<GlobalKey>>? onBlockKeysReady;
+
+  @override
+  State<MatrixTextRenderer> createState() => _MatrixTextRendererState();
+}
+
+class _MatrixTextRendererState extends State<MatrixTextRenderer> {
+  late List<Block> _resolvedBlocks;
+  List<GlobalKey> _blockKeys = [];
+  List<_SearchMatch> _matches = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _resolvedBlocks = widget.blocks ?? parseBlocks(widget.content!);
+    _blockKeys = List.generate(_resolvedBlocks.length, (_) => GlobalKey());
+    _recomputeMatches();
+  }
+
+  @override
+  void didUpdateWidget(covariant MatrixTextRenderer old) {
+    super.didUpdateWidget(old);
+    final blocksChanged = widget.blocks != null
+        ? !identical(widget.blocks, old.blocks)
+        : widget.content != old.content;
+    if (blocksChanged) {
+      _resolvedBlocks = widget.blocks ?? parseBlocks(widget.content!);
+      _blockKeys = List.generate(_resolvedBlocks.length, (_) => GlobalKey());
+      _recomputeMatches();
+    } else if (widget.searchQuery != old.searchQuery) {
+      _recomputeMatches();
+    }
+  }
+
+  void _recomputeMatches() {
+    _matches = _findAllMatches(_resolvedBlocks, widget.searchQuery);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.onBlockKeysReady?.call(_blockKeys);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    final blocks = parseBlocks(content);
-    final matches = _findAllMatches(blocks, searchQuery);
-
-    // Build a GlobalKey for every block so we can scroll to any match.
-    final keys = List.generate(blocks.length, (_) => GlobalKey());
-
-    // Notify the parent of the keys after the frame.
-    if (onBlockKeysReady != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        onBlockKeysReady!(keys);
-      });
-    }
-
     // Group matches by block index for quick lookup.
     final matchesByBlock = <int, List<_SearchMatch>>{};
-    for (final m in matches) {
+    for (final m in _matches) {
       matchesByBlock.putIfAbsent(m.blockIndex, () => []).add(m);
     }
 
     // Which global match index maps to which block?
     // We'll pass the relevant subset of matches to each block renderer.
     int globalIdx = 0;
-    final blockMatchStart =
-        <int, int>{}; // blockIndex -> first global match idx in that block
-    for (int bi = 0; bi < blocks.length; bi++) {
+    final blockMatchStart = <int, int>{}; // blockIndex -> first global match idx in that block
+    for (int bi = 0; bi < _resolvedBlocks.length; bi++) {
       final bm = matchesByBlock[bi];
       if (bm != null && bm.isNotEmpty) {
         blockMatchStart[bi] = globalIdx;
@@ -105,18 +134,18 @@ class MatrixTextRenderer extends StatelessWidget {
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: List.generate(blocks.length, (index) {
+      children: List.generate(_resolvedBlocks.length, (index) {
         final blockMatches = matchesByBlock[index] ?? [];
         final startGlobal = blockMatchStart[index] ?? -1;
         // Which local match (within this block) is active?
-        final localActive = (activeMatchIndex >= 0 && startGlobal >= 0)
-            ? activeMatchIndex - startGlobal
+        final localActive = (widget.activeMatchIndex >= 0 && startGlobal >= 0)
+            ? widget.activeMatchIndex - startGlobal
             : -1;
         return KeyedSubtree(
-          key: keys[index],
+          key: _blockKeys[index],
           child: _renderBlock(
             context,
-            blocks[index],
+            _resolvedBlocks[index],
             blockMatches,
             localActive,
           ),
@@ -380,7 +409,7 @@ class MatrixTextRenderer extends StatelessWidget {
         ),
       );
     } else if (b is MediaBlock) {
-      final path = mediaMap[b.key]?.url;
+      final path = widget.mediaMap[b.key]?.url;
       if (path == null) {
         return Container(
           margin: const EdgeInsets.symmetric(vertical: 8.0),
@@ -444,12 +473,12 @@ class MatrixTextRenderer extends StatelessWidget {
         cursor += m.group(0)!.length;
         final matchText = m.group(0)!;
         final mediaMatch = RegExp(
-          r'^\[(?:IMG|GIF):\s*([^\]]+)\]$',
+          r'^\[(?:IMG|GIF):\s*([^\(\)\]]+?)\s*(?:\(([^)]*)\))?\s*\]$',
           caseSensitive: false,
         ).firstMatch(matchText);
         if (mediaMatch != null) {
           final key = mediaMatch.group(1)!.trim();
-          final path = mediaMap[key]?.url;
+          final path = widget.mediaMap[key]?.url;
           if (path == null) {
             inlineParts.add(
               TextSpan(

@@ -528,7 +528,7 @@ class _TextEditorTabState extends State<_TextEditorTab> {
           child: _previewMode
               ? SingleChildScrollView(
                   padding: const EdgeInsets.all(16),
-                  child: MatrixTextRenderer(
+                  child: MatrixTextRenderer.fromContent(
                     content: _ctrl.text,
                     mediaMap: _mediaMap,
                   ),
@@ -973,7 +973,7 @@ class _VersionsTabState extends State<_VersionsTab> {
                   ? const Center(child: CircularProgressIndicator())
                   : SingleChildScrollView(
                       padding: const EdgeInsets.all(16),
-                      child: MatrixTextRenderer(
+                      child: MatrixTextRenderer.fromContent(
                         content: _previewContent,
                         mediaMap: const {},
                       ),

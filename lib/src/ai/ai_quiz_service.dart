@@ -1,8 +1,9 @@
-import 'dart:math';
+
 
 import 'ai_models.dart';
 import 'gemini_embedding_api.dart';
 import 'gemini_chat_api.dart';
+import 'embedding_utils.dart';
 import '../api.dart';
 
 class AiQuizService {
@@ -72,30 +73,22 @@ class AiQuizService {
     return generated;
   }
 
-  /// Validates the student's [studentAnswer] against [correctAnswer] via
-  /// embedding cosine similarity.
+  /// Validates [studentAnswer] against [correctAnswer]. If
+  /// [correctAnswerEmbedding] is provided (e.g. a cached embedding from
+  /// module_qa), it's used directly instead of re-embedding correctAnswer —
+  /// this is what Revision Mode uses to avoid redundant embedding calls.
   Future<QuizValidation> validateAnswer({
     required String studentAnswer,
     required String correctAnswer,
+    List<double>? correctAnswerEmbedding,
   }) async {
     final studentEmbedding = await _embeddingApi.embed(studentAnswer);
-    final correctEmbedding = await _embeddingApi.embed(correctAnswer);
-    final similarity = _cosineSimilarity(studentEmbedding, correctEmbedding);
+    final correctEmbedding = correctAnswerEmbedding ?? await _embeddingApi.embed(correctAnswer);
+    final similarity = cosineSimilarity(studentEmbedding, correctEmbedding);
     return QuizValidation(
       result: similarity >= _correctThreshold ? ValidationResult.correct : ValidationResult.incorrect,
       correctAnswer: correctAnswer,
       similarity: similarity,
     );
-  }
-
-  double _cosineSimilarity(List<double> a, List<double> b) {
-    double dot = 0, normA = 0, normB = 0;
-    for (var i = 0; i < a.length; i++) {
-      dot += a[i] * b[i];
-      normA += a[i] * a[i];
-      normB += b[i] * b[i];
-    }
-    if (normA == 0 || normB == 0) return 0;
-    return dot / (sqrt(normA) * sqrt(normB));
   }
 }

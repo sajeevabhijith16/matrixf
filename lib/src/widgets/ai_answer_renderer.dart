@@ -250,7 +250,7 @@ class AiAnswerRenderer extends StatelessWidget {
       onMatch: (m) {
         final matchText = m.group(0)!;
         final mediaMatch = RegExp(
-          r'^\[(?:IMG|GIF):\s*([^\]]+)\]$',
+          r'^\[(?:IMG|GIF):\s*([^\(\)\]]+?)\s*(?:\(([^)]*)\))?\s*\]$',
           caseSensitive: false,
         ).firstMatch(matchText);
         if (mediaMatch != null) {

@@ -27,6 +27,7 @@ class ChatMessage {
   final bool isError;
   final bool isConfirm;
   final bool isQuiz;              // true = show quiz question + answer input
+  final bool isRevisionQuestion;
   final String? quizCorrectAnswer; // hidden from UI until validated
   final QuizValidation? quizResult; // null until student submits an answer
 
@@ -38,6 +39,7 @@ class ChatMessage {
     this.isError = false,
     this.isConfirm = false,
     this.isQuiz = false,
+    this.isRevisionQuestion = false,
     this.quizCorrectAnswer,
     this.quizResult,
   });
@@ -50,6 +52,7 @@ class ChatMessage {
         isError: isError,
         isConfirm: isConfirm,
         isQuiz: isQuiz,
+        isRevisionQuestion: isRevisionQuestion,
         quizCorrectAnswer: quizCorrectAnswer,
         quizResult: quizResult ?? this.quizResult,
       );

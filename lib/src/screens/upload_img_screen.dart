@@ -76,7 +76,12 @@ class _UploadScreenState extends State<UploadScreen> {
   }
 
   void _selectPendingToken(PendingImageToken pending) {
-    setState(() => _tokenController.text = pending.token);
+    setState(() {
+      _tokenController.text = pending.token;
+      if (pending.inlineDescription != null && pending.inlineDescription!.isNotEmpty) {
+        _descriptionController.text = pending.inlineDescription!;
+      }
+    });
     _formScrollController.animateTo(
       0,
       duration: const Duration(milliseconds: 300),
